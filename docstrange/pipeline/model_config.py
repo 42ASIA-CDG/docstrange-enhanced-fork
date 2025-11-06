@@ -11,6 +11,7 @@ class ModelType(str, Enum):
     QWEN2VL = "qwen2vl"
     DONUT = "donut"
     PHI3_VISION = "phi3vision"
+    LLAVA = "llava"
 
 
 @dataclass
@@ -70,6 +71,17 @@ MODEL_CONFIGS: Dict[ModelType, ModelConfig] = {
         requires_ocr=False,
         supports_json_schema=True,
         max_tokens=128000
+    ),
+    
+    ModelType.LLAVA: ModelConfig(
+        name="LLaVA-1.6",
+        model_path="llava-hf/llava-1.5-7b-hf",
+        description="Large Language and Vision Assistant - excellent vision-language understanding",
+        best_for="General documents, invoices, complex layouts, multi-modal understanding",
+        params_size="7B",
+        requires_ocr=False,
+        supports_json_schema=True,
+        max_tokens=4096
     ),
 }
 

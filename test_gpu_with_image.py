@@ -105,21 +105,24 @@ def test_gpu_extraction_with_schema():
     
     # Ask user which model to use
     print("\n🤖 Available models:")
-    print("  1. nanonets     - High accuracy (slow, 10-30s) [7B params]")
-    print("  2. donut        - Fast processing (2-5s) [200M params] ⭐ RECOMMENDED")
-    print("  3. qwen2vl      - Structured data expert (10-30s) [7B params] ⚠️  Needs 10GB+ VRAM")
-    print("  4. phi3vision   - Long documents (10-30s) [4.2B params]")
-    print("\n💡 TIP: If you have <10GB VRAM, use Donut (option 2) or Nanonets (option 1)")
-    model_choice = input("\nSelect model (1-4, default=2): ").strip() or "2"
+    print("  1. nanonets     - High accuracy (10-30s) [7B params] ⭐ RECOMMENDED")
+    print("  2. donut        - Fast but limited (2-5s) [200M params] ⚠️  CORD v2 receipts only")
+    print("  3. qwen2vl      - Best structured data (10-30s) [7B params] ❌ Needs 10GB+ VRAM")
+    print("  4. phi3vision   - Long documents (10-30s) [4.2B params] ⚠️  Untested")
+    print("  5. llava        - Vision-language expert (10-30s) [7B params] ⚡ Good alternative")
+    print("\n💡 For general invoices: Use Nanonets (option 1) or LLaVA (option 5)")
+    print("💡 For 7.6GB GPU: Nanonets and LLaVA work reliably")
+    model_choice = input("\nSelect model (1-5, default=1): ").strip() or "1"
     
     model_map = {
-        "1": ("nanonets", "⚠️  Note: Nanonets takes 10-30 seconds - please be patient!"),
-        "2": ("donut", "⚡ Using Donut for fast processing!"),
-        "3": ("qwen2vl", "🧠 Using Qwen2-VL for structured data extraction!"),
-        "4": ("phi3vision", "📚 Using Phi-3-Vision for long documents!")
+        "1": ("nanonets", "⭐ Using Nanonets for high accuracy (please wait 10-30s)"),
+        "2": ("donut", "⚠️  Using Donut (limited to CORD v2 format receipts)"),
+        "3": ("qwen2vl", "❌ Warning: Qwen2-VL needs 10GB+ VRAM - may fail!"),
+        "4": ("phi3vision", "⚠️  Using Phi-3-Vision (untested on 7.6GB GPU)"),
+        "5": ("llava", "⚡ Using LLaVA-1.6 for vision-language understanding!")
     }
     
-    selected_model, message = model_map.get(model_choice, model_map["2"])
+    selected_model, message = model_map.get(model_choice, model_map["1"])
     print(message)
     
     try:

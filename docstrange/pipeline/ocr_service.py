@@ -325,6 +325,52 @@ class Phi3VisionOCRService(OCRService):
             raise
 
 
+class LLaVAOCRService(OCRService):
+    """LLaVA OCR implementation for vision-language document understanding."""
+    
+    def __init__(self):
+        """Initialize the service."""
+        from .llava_processor import LLaVAProcessor
+        self._processor = LLaVAProcessor()
+        logger.info("LLaVAOCRService initialized")
+    
+    @property
+    def model(self):
+        """Get the LLaVA model."""
+        return self._processor.model
+    
+    @property
+    def processor(self):
+        """Get the LLaVA processor."""
+        return self._processor.processor
+    
+    def extract_text(self, image_path: str) -> str:
+        """Extract text using LLaVA."""
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            text = self._processor.extract_text(image_path)
+            logger.info(f"LLaVA extracted text length: {len(text)}")
+            return text.strip()
+        except Exception as e:
+            logger.error(f"LLaVA OCR extraction failed: {e}")
+            return ""
+    
+    def extract_text_with_layout(self, image_path: str) -> str:
+        """Extract text with layout using LLaVA."""
+        return self.extract_text(image_path)
+    
+    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data using LLaVA."""
+        try:
+            return self._processor.extract_structured_data(image_path, json_schema)
+        except Exception as e:
+            logger.error(f"LLaVA structured data extraction failed: {e}")
+            raise
+
+
 class OCRServiceFactory:
     """Factory for creating OCR services based on configuration."""
     
@@ -333,7 +379,7 @@ class OCRServiceFactory:
         """Create OCR service based on provider configuration.
         
         Args:
-            provider: OCR provider name ('nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision')
+            provider: OCR provider name ('nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision', 'llava')
             
         Returns:
             OCRService instance
@@ -355,6 +401,8 @@ class OCRServiceFactory:
             return Qwen2VLOCRService()
         elif provider_lower == 'phi3vision':
             return Phi3VisionOCRService()
+        elif provider_lower == 'llava':
+            return LLaVAOCRService()
         else:
             raise ValueError(
                 f"Unsupported OCR provider: {provider}. "
@@ -368,4 +416,4 @@ class OCRServiceFactory:
         Returns:
             List of available provider names
         """
-        return ['nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision'] 
+        return ['nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision', 'llava'] 

@@ -6,24 +6,26 @@ Based on your GPU memory (7.6GB), here's what works:
 
 ## ✅ Models That Work on Your GPU
 
-### 1. Donut (RECOMMENDED) 🍩
-- **Memory**: ~2-3GB
-- **Speed**: 2-5s per page
-- **Best For**: Invoices, receipts, forms
-- **Status**: ✅ Works perfectly on your GPU
-
-```python
-extractor = DocumentExtractor(model="donut")
-```
-
-### 2. Nanonets
-- **Memory**: ~6-7GB (tight fit)
+### 1. Nanonets (RECOMMENDED for Your Use Case) ⭐
+- **Memory**: ~6-7GB
 - **Speed**: 10-30s per page
-- **Best For**: General documents
-- **Status**: ✅ Should work (close to limit)
+- **Best For**: General documents, invoices with complex layouts
+- **Status**: ✅ Works on your GPU (tight but reliable)
+- **Accuracy**: Highest for general documents
 
 ```python
 extractor = DocumentExtractor(model="nanonets")
+```
+
+### 2. Donut ⚠️
+- **Memory**: ~2-3GB
+- **Speed**: 2-5s per page
+- **Best For**: CORD v2 format receipts only
+- **Status**: ✅ Runs but limited accuracy
+- **Note**: Pre-trained only on specific receipt format, not good for general invoices
+
+```python
+extractor = DocumentExtractor(model="donut")
 ```
 
 ## ❌ Models That DON'T Work on Your GPU
@@ -41,29 +43,26 @@ extractor = DocumentExtractor(model="nanonets")
 
 ## 💡 Recommendations for Your System
 
-### Best Choice: Use Donut
-```bash
-python test_gpu_with_image.py
-# Select option 2 (Donut)
-```
-
-**Why Donut?**
-- ✅ 5-10x faster than Qwen2-VL
-- ✅ Uses only 2-3GB (plenty of room)
-- ✅ No memory errors
-- ✅ Great for invoices/receipts
-
-### Alternative: Use Nanonets
+### Best Choice: Use Nanonets
 ```bash
 python test_gpu_with_image.py
 # Select option 1 (Nanonets)
 ```
 
-**Nanonets pros/cons:**
-- ✅ Higher accuracy
-- ✅ General purpose
-- ⚠️ Uses ~6-7GB (close to your limit)
-- ⏳ Slower (10-30s)
+**Why Nanonets?**
+- ✅ Highest accuracy for general invoices
+- ✅ Works with your GPU (6-7GB fits in 7.6GB)
+- ✅ Handles complex layouts and tables
+- ✅ Not limited to specific document formats
+- ⏳ Takes 10-30s but worth it for accuracy
+
+### Why Not Donut?
+Donut is pre-trained specifically on CORD v2 receipt format:
+- ❌ Poor results on general invoices
+- ❌ Limited to specific receipt structure
+- ✅ Fast but not useful if accuracy is poor
+
+For your general invoice processing, Nanonets is the right choice.
 
 ## 🔧 What I've Done to Help
 
@@ -77,38 +76,38 @@ I've optimized Qwen2-VL and Phi-3-Vision to use less memory:
 
 ## 🎯 What You Should Do
 
-### For Quick Testing (Recommended)
+### For Invoice Processing (Recommended)
 ```bash
-# Use Donut - it's fast and works great on your GPU
+# Use Nanonets - best accuracy for your use case
 python test_gpu_with_image.py
-# Select: 2 (Donut)
+# Select: 1 (Nanonets)
 ```
 
 ### For Production Use
 
-**Option 1: Use Donut (Fast & Efficient)**
+**Use Nanonets (Best for General Invoices)**
 ```python
 from docstrange import DocumentExtractor
 
-extractor = DocumentExtractor(model="donut")
+extractor = DocumentExtractor(model="nanonets")
 result = extractor.extract("invoice.pdf")
 data = result.extract_data(json_schema=schema)
 ```
 
-**Option 2: Use Nanonets (High Accuracy)**
-```python
-extractor = DocumentExtractor(model="nanonets")
-result = extractor.extract("document.pdf")
-```
+**Why 10-30 seconds is worth it:**
+- You get accurate extraction
+- Tables and complex layouts work
+- All invoice types supported
+- Structured JSON works properly
 
 ## 📊 Memory Usage Breakdown
 
-| Model | Parameters | FP16 Size | Runtime Memory | Fits 7.6GB? |
-|-------|-----------|-----------|----------------|-------------|
-| **Donut** | 200M | ~400MB | 2-3GB | ✅ YES |
-| **Nanonets** | 7B | ~13GB | 6-7GB | ✅ YES (tight) |
-| **Phi-3-Vision** | 4.2B | ~8GB | 5-6GB | ⚠️ MAYBE |
-| **Qwen2-VL** | 7B | ~14GB | 7-8GB | ❌ NO |
+| Model | Parameters | FP16 Size | Runtime Memory | Fits 7.6GB? | Good Results? |
+|-------|-----------|-----------|----------------|-------------|---------------|
+| **Nanonets** | 7B | ~13GB | 6-7GB | ✅ YES | ✅ YES |
+| **Donut** | 200M | ~400MB | 2-3GB | ✅ YES | ❌ Limited (CORD v2 only) |
+| **Phi-3-Vision** | 4.2B | ~8GB | 5-6GB | ⚠️ MAYBE | ❓ Untested |
+| **Qwen2-VL** | 7B | ~14GB | 7-8GB | ❌ NO | ✅ YES (but OOM) |
 
 **Runtime memory** = Model weights + activations + gradients + KV cache
 
@@ -138,47 +137,34 @@ extractor = DocumentExtractor(model="qwen2vl")
 
 ## 🎁 The Good News
 
-**Donut is PERFECT for your GPU!**
-- Fast (2-5s vs 10-30s)
-- Efficient (2-3GB vs 7-8GB)
-- Accurate for invoices/receipts
-- No memory issues
+**Nanonets WORKS on your GPU!**
+- Accurate (best for general documents)
+- Handles your 7.6GB VRAM
+- Takes 10-30s but produces quality results
+- Worth the wait for proper extraction
 
-**For 90% of use cases, Donut is the best choice anyway!** 🎉
+**Don't use Donut for general invoices** - it's trained specifically for CORD v2 receipt format and won't give good results on other document types.
 
 ## 🧪 Test Script
 
-Here's a quick test to see what fits:
+Here's a quick test:
 
-```python
-import torch
+```bash
+# Test Nanonets (recommended)
+python test_gpu_with_image.py
+# Select: 1
 
-print(f"GPU Memory Available: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
-
-# Test Donut (should work)
-try:
-    extractor = DocumentExtractor(model="donut")
-    print("✅ Donut loaded successfully")
-except Exception as e:
-    print(f"❌ Donut failed: {e}")
-
-# Test Nanonets (should work but tight)
-try:
-    torch.cuda.empty_cache()
-    extractor = DocumentExtractor(model="nanonets")
-    print("✅ Nanonets loaded successfully")
-except Exception as e:
-    print(f"❌ Nanonets failed: {e}")
+# This should work and give you good results
 ```
 
 ## 📝 Summary
 
 **Your GPU (7.6GB) is perfect for:**
-- ✅ Donut (fast & efficient)
-- ✅ Nanonets (accurate, but slower)
+- ✅ Nanonets (accurate, general purpose) - **RECOMMENDED**
+- ⚠️ Donut (fast but limited to CORD v2 receipts only)
 
 **Your GPU is too small for:**
 - ❌ Qwen2-VL (needs 10GB+)
-- ⚠️ Phi-3-Vision (might work with optimizations)
+- ⚠️ Phi-3-Vision (untested, might work)
 
-**Recommendation: Use Donut for 90% of tasks, Nanonets for the other 10%.**
+**Recommendation: Use Nanonets for invoice processing. Accept the 10-30s wait time for accurate results.**

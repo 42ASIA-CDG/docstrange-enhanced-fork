@@ -154,7 +154,7 @@ Examples:
     
     parser.add_argument(
         "--model", "-m",
-        choices=["nanonets", "donut", "qwen2vl", "phi3vision"],
+        choices=["nanonets", "donut", "qwen2vl", "phi3vision", "llava"],
         default="nanonets",
         help="VLM model to use for document processing (default: nanonets)"
     )

@@ -40,6 +40,7 @@ def test_all_models():
     models = [
         ("donut", "Donut (200M)", "Fast, end-to-end"),
         ("nanonets", "Nanonets (7B)", "High accuracy"),
+        ("llava", "LLaVA-1.6 (7B)", "Vision-language expert"),
         ("qwen2vl", "Qwen2-VL (7B)", "Structured data expert"),
         ("phi3vision", "Phi-3-Vision (4.2B)", "Long documents")
     ]
