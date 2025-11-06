@@ -30,7 +30,9 @@ class DocumentExtractor:
         self,
         preserve_layout: bool = True,
         include_images: bool = True,
-        ocr_enabled: bool = True
+        ocr_enabled: bool = True,
+        gpu_mode: bool = True,
+        model: str = "nanonets"
     ):
         """Initialize the file extractor with GPU processing.
         
@@ -38,10 +40,12 @@ class DocumentExtractor:
             preserve_layout: Whether to preserve document layout
             include_images: Whether to include images in output
             ocr_enabled: Whether to enable OCR for image and PDF processing
+            gpu_mode: Whether to use GPU mode (ignored, kept for compatibility)
+            model: Model to use for GPU processing ('nanonets', 'donut', 'qwen2vl', 'phi3vision')
         
         Note:
             - GPU processing is required. CUDA-compatible GPU must be available.
-            - Uses local Nanonets models for OCR and document understanding.
+            - Uses local models for OCR and document understanding.
         
         Raises:
             RuntimeError: If no GPU is available
@@ -59,8 +63,9 @@ class DocumentExtractor:
         self.preserve_layout = preserve_layout
         self.include_images = include_images
         self.ocr_enabled = True if ocr_enabled is None else ocr_enabled
+        self.model = model
         
-        logger.info("GPU processing mode enabled")
+        logger.info(f"GPU processing mode enabled with model: {model}")
         
         # Initialize processors
         self.processors = []
@@ -80,9 +85,14 @@ class DocumentExtractor:
             URLProcessor(preserve_layout=self.preserve_layout, include_images=self.include_images),
         ]
         
-        # Add GPU processor with Nanonets OCR
-        logger.info("Initializing GPU processor with Nanonets OCR")
-        gpu_processor = GPUProcessor(preserve_layout=self.preserve_layout, include_images=self.include_images, ocr_enabled=self.ocr_enabled)
+        # Add GPU processor with selected model
+        logger.info(f"Initializing GPU processor with {self.model} model")
+        gpu_processor = GPUProcessor(
+            preserve_layout=self.preserve_layout, 
+            include_images=self.include_images, 
+            ocr_enabled=self.ocr_enabled,
+            model=self.model
+        )
         local_processors.append(gpu_processor)
         
         self.processors.extend(local_processors)

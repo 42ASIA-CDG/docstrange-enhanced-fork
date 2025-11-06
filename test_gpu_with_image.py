@@ -91,9 +91,9 @@ def test_gpu_extraction_with_schema():
     # For testing, use any document image you have
     test_file = input("\nEnter path to test image (or press Enter to skip): ").strip()
     
-    if not test_file:
-        print("\n⚠️  No test file provided. Creating a test image...")
-        test_file = create_test_image()
+    # if not test_file:
+    #     print("\n⚠️  No test file provided. Creating a test image...")
+    #     test_file = create_test_image()
     
     if not Path(test_file).exists():
         print(f"❌ File not found: {test_file}")
@@ -103,10 +103,29 @@ def test_gpu_extraction_with_schema():
     print(f"\n📋 Schema provided:")
     print(json.dumps(schema, indent=2))
     
+    # Ask user which model to use
+    print("\n🤖 Available models:")
+    print("  1. nanonets     - High accuracy (slow, 10-30s) [7B params]")
+    print("  2. donut        - Fast processing (2-5s) [200M params] ⭐ RECOMMENDED")
+    print("  3. qwen2vl      - Structured data expert (10-30s) [7B params] ⚠️  Needs 10GB+ VRAM")
+    print("  4. phi3vision   - Long documents (10-30s) [4.2B params]")
+    print("\n💡 TIP: If you have <10GB VRAM, use Donut (option 2) or Nanonets (option 1)")
+    model_choice = input("\nSelect model (1-4, default=2): ").strip() or "2"
+    
+    model_map = {
+        "1": ("nanonets", "⚠️  Note: Nanonets takes 10-30 seconds - please be patient!"),
+        "2": ("donut", "⚡ Using Donut for fast processing!"),
+        "3": ("qwen2vl", "🧠 Using Qwen2-VL for structured data extraction!"),
+        "4": ("phi3vision", "📚 Using Phi-3-Vision for long documents!")
+    }
+    
+    selected_model, message = model_map.get(model_choice, model_map["2"])
+    print(message)
+    
     try:
         # Create GPU extractor
-        print("\n🔧 Creating DocumentExtractor in GPU mode...")
-        extractor = DocumentExtractor()
+        print(f"\n🔧 Creating DocumentExtractor with {selected_model} model...")
+        extractor = DocumentExtractor(model=selected_model)
         
         # Extract the document
         print("🔍 Extracting document...")
@@ -159,31 +178,31 @@ def test_gpu_extraction_with_schema():
         return None
 
 
-def test_without_schema():
-    """Test GPU extraction without schema (baseline)."""
-    print("\n" + "="*80)
-    print("GPU EXTRACTION TEST WITHOUT SCHEMA (Baseline)")
-    print("="*80)
+# def test_without_schema():
+    # """Test GPU extraction without schema (baseline)."""
+    # print("\n" + "="*80)
+    # print("GPU EXTRACTION TEST WITHOUT SCHEMA (Baseline)")
+    # print("="*80)
     
-    test_file = create_test_image()
-    if not test_file:
-        print("❌ Cannot create test image")
-        return
+    # # test_file = create_test_image()
+    # # if not test_file:
+    # #     print("❌ Cannot create test image")
+    # #     return
     
-    try:
-        extractor = DocumentExtractor()
-        result = extractor.extract(test_file)
+    # try:
+    #     extractor = DocumentExtractor()
+    #     result = extractor.extract(test_file)
         
-        print(f"✓ Document extracted: {len(result.content)} characters")
+    #     print(f"✓ Document extracted: {len(result.content)} characters")
         
-        json_data = result.extract_data()
+    #     json_data = result.extract_data()
         
-        print(f"\nFormat: {json_data.get('format')}")
-        print(f"\nExtracted data:")
-        print(json.dumps(json_data.get('document', {}), indent=2)[:500])
+    #     print(f"\nFormat: {json_data.get('format')}")
+    #     print(f"\nExtracted data:")
+    #     print(json.dumps(json_data.get('document', {}), indent=2)[:500])
         
-    except Exception as e:
-        print(f"❌ Error: {e}")
+    # except Exception as e:
+    #     print(f"❌ Error: {e}")
 
 
 def main():
@@ -197,7 +216,7 @@ def main():
     result = test_gpu_extraction_with_schema()
     
     # Optionally test without schema
-    test_without_schema()
+    # test_without_schema()
     
     print("\n" + "="*80)
     print("TEST COMPLETE")

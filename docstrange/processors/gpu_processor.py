@@ -104,14 +104,26 @@ class GPUConversionResult(ConversionResult):
         print(f"file_exists: {os.path.exists(self.file_path) if self.file_path else False}")
         
         try:
-            # PRIORITY 1: If we have GPU processor and file, use the Nanonets model directly
-            # This is the primary method, matching cloud processor behavior
+            # PRIORITY 1: If we have GPU processor and file, use the selected model directly
             if self.gpu_processor and self.file_path and os.path.exists(self.file_path):
+                ocr_service = self.gpu_processor._get_ocr_service()
+                
+                # Check if the OCR service supports structured data extraction (e.g., Donut)
+                if hasattr(ocr_service, 'extract_structured_data') and callable(getattr(ocr_service, 'extract_structured_data')):
+                    logger.info(f"Using {self.ocr_provider} model for JSON extraction with schema")
+                    try:
+                        result = ocr_service.extract_structured_data(self.file_path, json_schema)
+                        return result
+                    except Exception as e:
+                        logger.warning(f"Structured extraction failed: {e}, falling back to Nanonets")
+                        # Fall through to Nanonets extraction
+                
+                # Fallback to Nanonets-style extraction for models that support it
                 if json_schema:
-                    logger.info("Using Nanonets GPU model for JSON extraction with schema")
+                    logger.info("Using GPU model for JSON extraction with schema")
                     return self._extract_json_with_model(json_schema=json_schema)
                 else:
-                    logger.info("Using Nanonets GPU model for JSON extraction")
+                    logger.info("Using GPU model for JSON extraction")
                     return self._extract_json_with_model()
             
             # PRIORITY 2: Fallback to Ollama if GPU model is not available
@@ -164,30 +176,34 @@ class GPUConversionResult(ConversionResult):
         
         Returns:
             Dictionary with extracted data
+            
+        Note:
+            This method uses the Nanonets 7B model which may take 10-30 seconds to generate output.
         """
         try:
+            # Clear GPU cache before loading model
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            logger.info("Starting JSON extraction with Nanonets model (7B) - this may take time...")
+            print("⏳ Starting JSON extraction with Nanonets model (this may take 10-30 seconds)...")
+            
             from PIL import Image
             from transformers import AutoTokenizer, AutoProcessor, AutoModelForImageTextToText
             
             # Get the model from the GPU processor's OCR service
             ocr_service = self.gpu_processor._get_ocr_service()
             
+            # Check if this is Nanonets service (which has the required attributes)
+            if not hasattr(ocr_service, 'model') or not hasattr(ocr_service, 'processor'):
+                logger.warning("OCR service doesn't support direct model access for JSON extraction")
+                raise AttributeError("Model not available for direct JSON extraction")
+            
             # Access the model components from the OCR service
-            if hasattr(ocr_service, 'processor') and hasattr(ocr_service, 'model') and hasattr(ocr_service, 'tokenizer'):
-                model = ocr_service.model
-                processor = ocr_service.processor
-                tokenizer = ocr_service.tokenizer
-            else:
-                # Fallback: load model directly
-                model_path = "nanonets/Nanonets-OCR-s"
-                model = AutoModelForImageTextToText.from_pretrained(
-                    model_path, 
-                    torch_dtype="auto", 
-                    device_map="auto"
-                )
-                model.eval()
-                processor = AutoProcessor.from_pretrained(model_path)
-                tokenizer = AutoTokenizer.from_pretrained(model_path)
+            model = ocr_service.model
+            processor = ocr_service.processor
+            tokenizer = ocr_service.tokenizer if hasattr(ocr_service, 'tokenizer') else None
             
             # Define the JSON extraction prompt based on whether schema is provided
             if json_schema:
@@ -252,12 +268,24 @@ Example:
             inputs = processor(text=[text], images=[image], padding=True, return_tensors="pt")
             inputs = inputs.to(model.device)
             
-            # Generate JSON response
-            output_ids = model.generate(**inputs, max_new_tokens=15000, do_sample=False)
+            # Generate JSON response with reasonable limits
+            logger.info("Generating JSON output (this may take 10-30 seconds)...")
+            print("⏳ Generating JSON output (please wait, this may take 10-30 seconds)...")
+            
+            output_ids = model.generate(
+                **inputs, 
+                max_new_tokens=2048,  # Reduced from 15000 - most JSON responses don't need this much
+                do_sample=False,
+                num_beams=1,  # Faster than beam search
+                pad_token_id=processor.tokenizer.pad_token_id if hasattr(processor, 'tokenizer') else None,
+                eos_token_id=processor.tokenizer.eos_token_id if hasattr(processor, 'tokenizer') else None,
+            )
+            
             generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
             
             json_text = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)[0]
-            print(f"json_text: {json_text}")
+            print(f"✅ Generation complete. Response length: {len(json_text)} chars")
+            logger.info(f"Generated JSON text length: {len(json_text)}")
             
             # Try to parse the JSON response with improved parsing
             def try_parse_json(text):
@@ -369,11 +397,24 @@ Example:
 
 
 class GPUProcessor(BaseProcessor):
-    """Processor for image files and PDFs with Nanonets OCR capabilities."""
+    """Processor for image files and PDFs with multiple VLM model support."""
     
-    def __init__(self, preserve_layout: bool = True, include_images: bool = False, ocr_enabled: bool = True, use_markdownify: bool = None, ocr_service=None):
+    def __init__(self, preserve_layout: bool = True, include_images: bool = False, 
+                 ocr_enabled: bool = True, use_markdownify: bool = None, 
+                 ocr_service=None, model: str = "nanonets"):
+        """Initialize GPU processor with model selection.
+        
+        Args:
+            preserve_layout: Whether to preserve document layout
+            include_images: Whether to include images in output
+            ocr_enabled: Whether OCR is enabled
+            use_markdownify: Whether to use markdownify
+            ocr_service: Optional OCR service instance
+            model: Model to use ('nanonets', 'donut', 'qwen2vl', 'phi3vision')
+        """
         super().__init__(preserve_layout, include_images, ocr_enabled, use_markdownify)
         self._ocr_service = ocr_service
+        self.model = model
     
     def can_process(self, file_path: str) -> bool:
         """Check if this processor can handle the given file.
@@ -393,11 +434,11 @@ class GPUProcessor(BaseProcessor):
         return ext in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp', '.gif', '.pdf']
     
     def _get_ocr_service(self):
-        """Get OCR service instance."""
+        """Get OCR service instance based on selected model."""
         if self._ocr_service is not None:
             return self._ocr_service
-        # Use Nanonets OCR service by default
-        self._ocr_service = OCRServiceFactory.create_service('nanonets')
+        # Create service based on model type
+        self._ocr_service = OCRServiceFactory.create_service(self.model)
         return self._ocr_service
     
     def process(self, file_path: str) -> GPUConversionResult:

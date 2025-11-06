@@ -43,6 +43,13 @@ DocStrange converts documents to Markdown, JSON, CSV, and HTML quickly and accur
 
 ## **What's New**
 
+**November 2025**
+
+- 🎨 **Multi-Model Support**: Choose between multiple VLM models (Nanonets, Donut, Qwen2-VL, Phi-3-Vision) optimized for different use cases
+- 🍩 **Donut Integration**: Fast end-to-end document understanding (5-10x faster for invoices/receipts)
+- ⚡ **Model Selection**: Simple `--model` flag or `model=` parameter to switch between models
+- 📚 **Comprehensive Docs**: New guides for model selection and comparison
+
 **August 2025**
 
 - 🚀 **Major Model Upgrade**: The core model has been upgraded to **7B parameters**, delivering significantly higher accuracy and deeper understanding of complex documents.

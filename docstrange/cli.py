@@ -153,6 +153,13 @@ Examples:
     )
     
     parser.add_argument(
+        "--model", "-m",
+        choices=["nanonets", "donut", "qwen2vl", "phi3vision"],
+        default="nanonets",
+        help="VLM model to use for document processing (default: nanonets)"
+    )
+    
+    parser.add_argument(
         "--ollama-url",
         default="http://localhost:11434",
         help="Ollama server URL for local field extraction (default: http://localhost:11434)"
@@ -227,7 +234,7 @@ Examples:
     # Handle list formats flag
     if args.list_formats:
         try:
-            extractor = DocumentExtractor()
+            extractor = DocumentExtractor(model=args.model)
             print_supported_formats(extractor)
             return 0
         except RuntimeError as e:
@@ -238,15 +245,16 @@ Examples:
     if not args.input:
         parser.error("No input specified. Please provide file(s), URL(s), or text to extract.")
     
-    # Initialize extractor with GPU processing
+    # Initialize extractor with GPU processing and selected model
     try:
-        extractor = DocumentExtractor()
+        extractor = DocumentExtractor(model=args.model)
     except RuntimeError as e:
         print(f"❌ Error: {e}", file=sys.stderr)
         return 1
     
     if args.verbose:
         print(f"Initialized extractor in GPU mode:")
+        print(f"  - Model: {args.model}")
         print(f"  - Output format: {args.output}")
         print(f"  - GPU processing: enabled")
         print()
