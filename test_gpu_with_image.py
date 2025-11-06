@@ -12,17 +12,78 @@ from docstrange import DocumentExtractor
 def test_gpu_extraction_with_schema():
     """Test GPU extraction with a real image and schema."""
     print("\n" + "="*80)
-    print("GPU EXTRACTION TEST WITH JSON SCHEMA")
+    print("GPU EXTRACTION TEST WITH INVOICE JSON SCHEMA")
     print("="*80)
     
-    # Define a simple schema
+    # Define a comprehensive invoice schema
     schema = {
         "type": "object",
         "properties": {
-            "title": {"type": "string"},
-            "content": {"type": "string"},
-            "date": {"type": "string"},
-            "amount": {"type": "string"}
+            "invoice_number": {
+                "type": "string",
+                "description": "The unique invoice number"
+            },
+            "invoice_date": {
+                "type": "string",
+                "description": "Date when the invoice was issued"
+            },
+            "due_date": {
+                "type": "string",
+                "description": "Payment due date"
+            },
+            "vendor_name": {
+                "type": "string",
+                "description": "Name of the vendor/supplier"
+            },
+            "vendor_address": {
+                "type": "string",
+                "description": "Vendor's address"
+            },
+            "customer_name": {
+                "type": "string",
+                "description": "Name of the customer/buyer"
+            },
+            "customer_address": {
+                "type": "string",
+                "description": "Customer's address"
+            },
+            "line_items": {
+                "type": "array",
+                "description": "List of items/services in the invoice",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "quantity": {"type": "string"},
+                        "unit_price": {"type": "string"},
+                        "total": {"type": "string"}
+                    }
+                }
+            },
+            "subtotal": {
+                "type": "string",
+                "description": "Subtotal amount before tax"
+            },
+            "tax_rate": {
+                "type": "string",
+                "description": "Tax rate percentage"
+            },
+            "tax_amount": {
+                "type": "string",
+                "description": "Total tax amount"
+            },
+            "total_amount": {
+                "type": "string",
+                "description": "Final total amount to be paid"
+            },
+            "payment_terms": {
+                "type": "string",
+                "description": "Payment terms and conditions"
+            },
+            "notes": {
+                "type": "string",
+                "description": "Additional notes or comments"
+            }
         }
     }
     
@@ -45,7 +106,7 @@ def test_gpu_extraction_with_schema():
     try:
         # Create GPU extractor
         print("\n🔧 Creating DocumentExtractor in GPU mode...")
-        extractor = DocumentExtractor(gpu=True)
+        extractor = DocumentExtractor()
         
         # Extract the document
         print("🔍 Extracting document...")
@@ -99,41 +160,61 @@ def test_gpu_extraction_with_schema():
 
 
 def create_test_image():
-    """Create a simple test image with text."""
+    """Create a simple test image with invoice text."""
     try:
         from PIL import Image, ImageDraw, ImageFont
         import tempfile
         
-        print("   Creating test image with sample text...")
+        print("   Creating test invoice image...")
         
-        # Create image
-        img = Image.new('RGB', (800, 400), color='white')
+        # Create image with more space for invoice
+        img = Image.new('RGB', (800, 600), color='white')
         draw = ImageDraw.Draw(img)
         
-        # Add text
-        text = """
-        Invoice #12345
-        Date: 2025-11-05
-        Amount: $1,234.56
-        
-        Customer: John Doe
-        Product: Widget A
-        Quantity: 10
-        """
+        # Add invoice text
+        text = """INVOICE
+
+Invoice #: INV-2025-001
+Date: November 7, 2025
+Due Date: December 7, 2025
+
+VENDOR:
+DocStrange Technologies
+123 AI Street
+San Francisco, CA 94105
+
+BILL TO:
+John Doe
+456 Customer Ave
+New York, NY 10001
+
+ITEMS:
+Description          Qty    Unit Price    Total
+GPU Processing       100    $0.50         $50.00
+OCR Service          50     $1.00         $50.00
+Data Extraction      25     $2.00         $50.00
+
+Subtotal:                               $150.00
+Tax (10%):                              $15.00
+TOTAL:                                  $165.00
+
+Payment Terms: Net 30
+Thank you for your business!
+"""
         
         try:
             # Try to use a default font
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
         except:
             font = ImageFont.load_default()
         
-        draw.text((50, 50), text, fill='black', font=font)
+        draw.text((50, 30), text, fill='black', font=font)
         
         # Save to temp file
         temp_file = tempfile.mktemp(suffix='.png')
         img.save(temp_file)
         
-        print(f"   ✓ Created test image: {temp_file}")
+        print(f"   ✓ Created test invoice image: {temp_file}")
         return temp_file
         
     except ImportError:
@@ -153,7 +234,7 @@ def test_without_schema():
         return
     
     try:
-        extractor = DocumentExtractor(gpu=True)
+        extractor = DocumentExtractor()
         result = extractor.extract(test_file)
         
         print(f"✓ Document extracted: {len(result.content)} characters")

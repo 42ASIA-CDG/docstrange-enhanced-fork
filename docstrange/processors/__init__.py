@@ -8,7 +8,6 @@ from .url_processor import URLProcessor
 from .html_processor import HTMLProcessor
 from .pptx_processor import PPTXProcessor
 from .image_processor import ImageProcessor
-from .cloud_processor import CloudProcessor, CloudConversionResult
 from .gpu_processor import GPUProcessor, GPUConversionResult
 
 __all__ = [
@@ -20,8 +19,6 @@ __all__ = [
     "HTMLProcessor",
     "PPTXProcessor",
     "ImageProcessor",
-    "CloudProcessor",
-    "CloudConversionResult",
     "GPUProcessor",
     "GPUConversionResult"
 ] 

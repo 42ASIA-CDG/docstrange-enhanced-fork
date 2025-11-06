@@ -261,19 +261,41 @@ Example:
             
             # Try to parse the JSON response with improved parsing
             def try_parse_json(text):
+                """Parse JSON from text, handling markdown code blocks and malformed JSON."""
+                # First, try to extract JSON from markdown code blocks
+                json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
+                if json_match:
+                    text = json_match.group(1).strip()
+                
+                # Try direct parsing
                 try:
                     return json.loads(text)
                 except json.JSONDecodeError:
-                    # Try cleaning and reparsing
+                    # Try cleaning common issues
                     try:
-                        text = re.sub(r"(\w+):", r'"\1":', text)  # wrap keys
-                        text = text.replace("'", '"')  # replace single quotes
+                        # Remove any remaining markdown artifacts
+                        text = text.strip('`').strip()
+                        # Try parsing again
                         return json.loads(text)
-                    except:
-                        return {"raw_text": text}
+                    except json.JSONDecodeError:
+                        # Try more aggressive cleaning
+                        try:
+                            # Wrap unquoted keys
+                            text = re.sub(r'(\w+)(?=\s*:)', r'"\1"', text)
+                            # Replace single quotes with double quotes
+                            text = text.replace("'", '"')
+                            return json.loads(text)
+                        except:
+                            # Last resort: return as error
+                            logger.error(f"Failed to parse JSON: {text[:200]}")
+                            return {"error": "Failed to parse JSON", "raw_output": text}
             
             # Parse the JSON
             extracted_data = try_parse_json(json_text)
+            
+            # Check if parsing failed and we got an error response
+            if isinstance(extracted_data, dict) and "error" in extracted_data:
+                logger.warning(f"JSON parsing failed, using raw output")
             
             # Create the result structure matching cloud processor format
             if json_schema:
@@ -282,26 +304,16 @@ Example:
                     "structured_data": extracted_data,
                     "format": "structured_json",
                     "schema": json_schema,
-                    "gpu_processing_info": {
-                        'ocr_provider': self.ocr_provider,
-                        'processing_mode': 'gpu',
-                        'file_path': self.file_path,
-                        'gpu_processor_available': self.gpu_processor is not None,
-                        'json_extraction_method': 'nanonets_model_with_schema'
-                    }
+                    "extractor": "gpu_model",
+                    "method": "nanonets_model_with_schema"
                 }
             else:
                 # General extraction format
                 result = {
                     "document": extracted_data,
                     "format": "gpu_structured_json",
-                    "gpu_processing_info": {
-                        'ocr_provider': self.ocr_provider,
-                        'processing_mode': 'gpu',
-                        'file_path': self.file_path,
-                        'gpu_processor_available': self.gpu_processor is not None,
-                        'json_extraction_method': 'nanonets_model'
-                    }
+                    "extractor": "gpu_model",
+                    "method": "nanonets_model"
                 }
             
             return result
