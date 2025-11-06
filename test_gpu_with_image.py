@@ -159,69 +159,6 @@ def test_gpu_extraction_with_schema():
         return None
 
 
-def create_test_image():
-    """Create a simple test image with invoice text."""
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import tempfile
-        
-        print("   Creating test invoice image...")
-        
-        # Create image with more space for invoice
-        img = Image.new('RGB', (800, 600), color='white')
-        draw = ImageDraw.Draw(img)
-        
-        # Add invoice text
-        text = """INVOICE
-
-Invoice #: INV-2025-001
-Date: November 7, 2025
-Due Date: December 7, 2025
-
-VENDOR:
-DocStrange Technologies
-123 AI Street
-San Francisco, CA 94105
-
-BILL TO:
-John Doe
-456 Customer Ave
-New York, NY 10001
-
-ITEMS:
-Description          Qty    Unit Price    Total
-GPU Processing       100    $0.50         $50.00
-OCR Service          50     $1.00         $50.00
-Data Extraction      25     $2.00         $50.00
-
-Subtotal:                               $150.00
-Tax (10%):                              $15.00
-TOTAL:                                  $165.00
-
-Payment Terms: Net 30
-Thank you for your business!
-"""
-        
-        try:
-            # Try to use a default font
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-        except:
-            font = ImageFont.load_default()
-        
-        draw.text((50, 30), text, fill='black', font=font)
-        
-        # Save to temp file
-        temp_file = tempfile.mktemp(suffix='.png')
-        img.save(temp_file)
-        
-        print(f"   ✓ Created test invoice image: {temp_file}")
-        return temp_file
-        
-    except ImportError:
-        print("   ❌ PIL not available, cannot create test image")
-        return None
-
-
 def test_without_schema():
     """Test GPU extraction without schema (baseline)."""
     print("\n" + "="*80)
@@ -260,7 +197,7 @@ def main():
     result = test_gpu_extraction_with_schema()
     
     # Optionally test without schema
-    # test_without_schema()
+    test_without_schema()
     
     print("\n" + "="*80)
     print("TEST COMPLETE")
