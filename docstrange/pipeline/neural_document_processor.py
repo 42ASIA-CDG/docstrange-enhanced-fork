@@ -242,8 +242,20 @@ class NeuralDocumentProcessor:
             logger.info("Docling neural models initialized successfully")
             
         except ImportError as e:
+            # Docling or optional dependencies not installed or incompatible.
+            # Don't crash the whole pipeline — fall back to simpler OCR.
             logger.error(f"Docling models not available: {e}")
-            raise
+            logger.info(
+                "Falling back to basic OCR mode: advanced docling models disabled. "
+                "Install 'docling_ibm_models' and compatible 'transformers' if you need advanced layout/table models."
+            )
+            # Set fallback flags so other methods use simpler extraction paths
+            self._use_fallback_mode = True
+            self.use_advanced_models = False
+            self.layout_predictor = None
+            self.table_predictor = None
+            self.ocr_reader = None
+            return
         except Exception as e:
             error_msg = str(e)
             if "NumPy" in error_msg or "numpy" in error_msg.lower():

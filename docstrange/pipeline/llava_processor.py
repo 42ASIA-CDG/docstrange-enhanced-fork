@@ -247,6 +247,9 @@ ASSISTANT:"""
         if json_match:
             text = json_match.group(1).strip()
         
+        # Clean escaped underscores (LLaVA sometimes escapes them)
+        text = text.replace('\\_', '_')
+        
         # Try direct parsing
         try:
             return json.loads(text)
@@ -260,7 +263,8 @@ ASSISTANT:"""
                 json_match = re.search(r'\{.*\}', text, re.DOTALL)
                 if json_match:
                     try:
-                        return json.loads(json_match.group(0))
+                        cleaned = json_match.group(0).replace('\\_', '_')
+                        return json.loads(cleaned)
                     except:
                         pass
                 
