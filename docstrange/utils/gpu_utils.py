@@ -67,6 +67,55 @@ def should_use_gpu_processor() -> bool:
     return is_gpu_available()
 
 
+def get_max_memory_config(headroom_gb: float = 2.0) -> Dict[int, str]:
+    """Auto-detect GPU memory and return a max_memory mapping for transformers.
+    
+    Args:
+        headroom_gb: Amount of memory (GB) to reserve for overhead and operations
+        
+    Returns:
+        Dictionary mapping device IDs to memory limits (e.g., {0: "14GB"})
+        Empty dict if no GPU available
+    """
+    max_memory = {}
+    
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            logger.info("No GPU available for memory detection")
+            return max_memory
+        
+        device_count = torch.cuda.device_count()
+        
+        for device_id in range(device_count):
+            # Get total memory in bytes
+            props = torch.cuda.get_device_properties(device_id)
+            total_memory_gb = props.total_memory / (1024 ** 3)
+            
+            # Reserve headroom for operations
+            usable_memory_gb = max(1.0, total_memory_gb - headroom_gb)
+            
+            # Round down to nearest GB for safety
+            usable_memory_gb = int(usable_memory_gb)
+            
+            max_memory[device_id] = f"{usable_memory_gb}GB"
+            
+            logger.info(
+                f"GPU {device_id} ({props.name}): "
+                f"Total={total_memory_gb:.1f}GB, "
+                f"Usable={usable_memory_gb}GB (headroom={headroom_gb}GB)"
+            )
+        
+        return max_memory
+        
+    except ImportError:
+        logger.warning("PyTorch not available for memory detection")
+        return max_memory
+    except Exception as e:
+        logger.error(f"Error detecting GPU memory: {e}")
+        return max_memory
+
+
 def get_processor_preference() -> str:
     """Get the preferred processor type based on system capabilities.
     

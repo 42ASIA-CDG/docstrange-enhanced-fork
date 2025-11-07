@@ -4,6 +4,7 @@ import logging
 import json
 import re
 from typing import Dict, Any, Optional
+import os
 from PIL import Image
 import torch
 
@@ -40,12 +41,27 @@ class Qwen2VLProcessor:
             
             # Load processor and model with memory optimization
             self.processor = AutoProcessor.from_pretrained(self.model_path)
+            
+            # Auto-detect GPU memory or use env override
+            if "DOCSTRANGE_MAX_MEMORY" in os.environ:
+                max_mem = os.environ.get("DOCSTRANGE_MAX_MEMORY")
+                max_memory_map = {0: max_mem}
+                logger.info(f"Using manual max_memory: {max_mem}")
+            else:
+                from docstrange.utils.gpu_utils import get_max_memory_config
+                max_memory_map = get_max_memory_config(headroom_gb=2.0)
+                if not max_memory_map:
+                    max_memory_map = {0: "14GB"}
+                    logger.warning("GPU detection failed, using fallback: 14GB")
+                else:
+                    logger.info(f"Auto-detected max_memory: {max_memory_map}")
+
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(
                 self.model_path,
                 torch_dtype=torch.float16,  # Use float16 instead of bfloat16 for memory
                 device_map="auto",
                 low_cpu_mem_usage=True,
-                max_memory={0: "6GB"}  # Limit GPU memory usage
+                # max_memory=max_memory_map  # Limit GPU memory usage
             )
             
             self.model.eval()
