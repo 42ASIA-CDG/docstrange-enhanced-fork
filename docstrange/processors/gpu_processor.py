@@ -274,7 +274,7 @@ Example:
             
             output_ids = model.generate(
                 **inputs, 
-                max_new_tokens=2048,  # Reduced from 15000 - most JSON responses don't need this much
+                max_new_tokens=100000,  # Sufficient for most JSON responses while being reasonably fast
                 do_sample=False,
                 num_beams=1,  # Faster than beam search
                 pad_token_id=processor.tokenizer.pad_token_id if hasattr(processor, 'tokenizer') else None,
@@ -298,32 +298,52 @@ Example:
                 # Try direct parsing
                 try:
                     return json.loads(text)
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
                     # Try cleaning common issues
                     try:
                         # Remove any remaining markdown artifacts
                         text = text.strip('`').strip()
+                        # Remove trailing commas before closing braces/brackets
+                        text = re.sub(r',(\s*[}\]])', r'\1', text)
                         # Try parsing again
                         return json.loads(text)
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as e2:
                         # Try more aggressive cleaning
                         try:
-                            # Wrap unquoted keys
+                            # Fix invalid key-value patterns like "Key: value" -> "Key": "value"
+                            # This handles cases like "Invoice #: INV-001" 
+                            text = re.sub(r'"([^"]+):\s*([^",}\]]+)"', r'"\1": "\2"', text)
+                            
+                            # Remove trailing commas before closing braces/brackets
+                            text = re.sub(r',(\s*[}\]])', r'\1', text)
+                            
+                            # Wrap unquoted keys (if any remain)
                             text = re.sub(r'(\w+)(?=\s*:)', r'"\1"', text)
+                            
                             # Replace single quotes with double quotes
                             text = text.replace("'", '"')
+                            
+                            # Remove trailing commas one more time
+                            text = re.sub(r',(\s*[}\]])', r'\1', text)
+                            
                             return json.loads(text)
-                        except:
-                            # Last resort: return as error
-                            logger.error(f"Failed to parse JSON: {text[:200]}")
-                            return {"error": "Failed to parse JSON", "raw_output": text}
+                        except json.JSONDecodeError as e3:
+                            # Last resort: log full error and return as raw output
+                            logger.error(f"Failed to parse JSON after all attempts.")
+                            logger.error(f"Original error: {e}")
+                            logger.error(f"Text length: {len(text)} chars")
+                            logger.error(f"First 500 chars: {text[:500]}")
+                            logger.error(f"Last 200 chars: {text[-200:]}")
+                            print(f"Failed to parse JSON: {text[:200]}")
+                            print("JSON parsing failed, using raw output")
+                            return {"error": "Failed to parse JSON", "raw_output": text, "parse_error": str(e3)}
             
             # Parse the JSON
             extracted_data = try_parse_json(json_text)
             
             # Check if parsing failed and we got an error response
             if isinstance(extracted_data, dict) and "error" in extracted_data:
-                logger.warning(f"JSON parsing failed, using raw output")
+                logger.warning(f"JSON parsing failed, returning raw output in response")
             
             # Create the result structure matching cloud processor format
             if json_schema:

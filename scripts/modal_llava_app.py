@@ -1,5 +1,11 @@
 """
-Modal + FastAPI test app to run LLaVA on a cloud T4 GPU.
+Modal + FastAPI app to run GPU-accelerated document extraction models.
+
+Supported Models:
+- nanonets: Nanonets OCR-s vision-language model (7B)
+- llava: LLaVA-1.5-7B vision-language model
+- qwen2vl: Qwen2-VL vision-language model (7B)
+- phi3vision: Phi-3 Vision model (4.2B)
 
 Usage:
 1. Install modal CLI and login: `modal login`
@@ -7,15 +13,16 @@ Usage:
    modal deploy scripts/modal_llava_app.py
 
 Notes:
-- This app copies the entire docstrange project to /pkg and installs it in the image.
-- Uses a persistent Modal Volume to cache models (avoids re-downloading on cold starts).
-- The app auto-detects T4 GPU memory (14GB usable on a 16GB T4).
-- You can override max_memory by setting env: DOCSTRANGE_MAX_MEMORY=14GB
+- All models are pre-loaded at container startup for faster inference
+- Uses persistent Modal Volume to cache models (avoids re-downloading)
+- Auto-detects GPU memory with configurable headroom
+- Set DOCSTRANGE_MAX_MEMORY env var to override auto-detection
 
-Endpoint:
-- POST /extract - multipart file upload (field name `file`), optional query param `model` (default 'llava')
+Endpoints:
+- GET / - Health check with list of loaded models
+- POST /extract - multipart file upload (field name `file`), query param `model` (nanonets|llava|qwen2vl|phi3vision)
 
-This is a minimal test harness; do not expose publicly without authentication.
+This is a test harness; do not expose publicly without authentication.
 """
 import modal
 from pathlib import Path
@@ -43,12 +50,15 @@ image = (
 
 app = modal.App("docstrange-llava-test")
 
+# List of models to pre-load
+SUPPORTED_MODELS = ["nanonets", "qwen2vl"]
+
 
 @app.cls(
     image=image,
-    gpu="T4",
+    gpu="A100",
     timeout=1200,  # 20 minutes for model loading + inference
-    scaledown_window=300,  # Keep container warm for 5 minutes (renamed from container_idle_timeout)
+    scaledown_window=300,  # Keep container warm for 5 minutes
     volumes={"/cache": model_cache},  # Mount to /cache to avoid conflict with existing /root/.cache
     env={
         "HF_HOME": "/cache/huggingface",
@@ -58,23 +68,39 @@ app = modal.App("docstrange-llava-test")
     }
 )
 class DocstrangeApp:
-    """Pre-load model at container startup for faster inference."""
+    """Pre-load all GPU models at container startup for faster inference."""
     
     @modal.enter()
-    def load_model(self):
-        """Load model once when container starts."""
+    def load_models(self):
+        """Load all models once when container starts."""
         import time
-        print("🚀 Container starting - pre-loading LLaVA model...")
-        start = time.time()
+        print("🚀 Container starting - pre-loading all GPU models...")
+        print(f"📋 Models to load: {', '.join(SUPPORTED_MODELS)}")
         
         from docstrange import DocumentExtractor
-        self.extractor = DocumentExtractor(model="llava")
         
-        print(f"✅ Model pre-loaded in {time.time() - start:.1f}s")
+        self.extractors = {}
+        total_start = time.time()
+        
+        for model_name in SUPPORTED_MODELS:
+            print(f"\n⏳ Loading {model_name}...")
+            model_start = time.time()
+            
+            try:
+                self.extractors[model_name] = DocumentExtractor(model=model_name)
+                elapsed = time.time() - model_start
+                print(f"✅ {model_name} loaded in {elapsed:.1f}s")
+            except Exception as e:
+                print(f"❌ Failed to load {model_name}: {e}")
+                # Continue loading other models even if one fails
+        
+        total_elapsed = time.time() - total_start
+        print(f"\n🎉 All models pre-loaded in {total_elapsed:.1f}s")
+        print(f"✅ Ready models: {', '.join(self.extractors.keys())}")
     
     @modal.asgi_app()
     def fastapi_app(self):
-        from fastapi import FastAPI, UploadFile, File, HTTPException
+        from fastapi import FastAPI, UploadFile, File, HTTPException, Form
         from pathlib import Path
         import shutil
 
@@ -82,18 +108,28 @@ class DocstrangeApp:
 
         @api.get("/")
         def health():
-            """Health check endpoint."""
-            return {"status": "ok", "message": "LLaVA model is pre-loaded and ready"}
+            """Health check endpoint with loaded models info."""
+            return {
+                "status": "ok",
+                "message": "GPU models are pre-loaded and ready",
+                "loaded_models": list(self.extractors.keys()),
+                "supported_models": SUPPORTED_MODELS
+            }
 
         @api.post("/extract")
-        async def extract(file: UploadFile = File(...), model: str = "llava"):
+        async def extract(file: UploadFile = File(...), model: str = "nanonets"):
             import time
             start_time = time.time()
             
             print(f"📥 Received extraction request for model: {model}")
             
-            if model != "llava":
-                raise HTTPException(status_code=400, detail="Only 'llava' model is pre-loaded")
+            # Validate model
+            if model not in self.extractors:
+                available = list(self.extractors.keys())
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model '{model}' not loaded. Available models: {available}"
+                )
             
             # Save upload to temporary path
             tmp_dir = Path("/tmp/docstrange_modal")
@@ -106,11 +142,13 @@ class DocstrangeApp:
             print(f"✅ File saved ({time.time() - start_time:.1f}s)")
 
             try:
-                print(f"� Starting extraction (model already loaded)...")
+                print(f"🔍 Starting extraction with {model} (model already loaded)...")
                 extract_start = time.time()
-                result = self.extractor.extract(str(tmp_path))
-                print(f"✅ Extraction complete ({time.time() - extract_start:.1f}s)")
                 
+                # Use the pre-loaded extractor for this model
+                result = self.extractors[model].extract(str(tmp_path))
+                
+                print(f"✅ Extraction complete ({time.time() - extract_start:.1f}s)")
                 print(f"📊 Total request time: {time.time() - start_time:.1f}s")
 
                 # Return summary info to keep response small
@@ -127,6 +165,82 @@ class DocstrangeApp:
                 import traceback
                 error_msg = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
                 print(f"❌ Error during extraction: {error_msg}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=error_msg
+                )
+
+        @api.post("/extract_structured")
+        async def extract_structured(
+            file: UploadFile = File(...), 
+            model: str = Form("nanonets"),
+            schema: str = Form(None)
+        ):
+            """Extract structured data using a JSON schema."""
+            import time
+            import json as json_module
+            start_time = time.time()
+            
+            print(f"📥 Received structured extraction request for model: {model}")
+            print(f"📥 Schema parameter received: {schema is not None} (length: {len(schema) if schema else 0})")
+            
+            # Validate model
+            if model not in self.extractors:
+                available = list(self.extractors.keys())
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model '{model}' not loaded. Available models: {available}"
+                )
+            
+            # Parse JSON schema if provided
+            json_schema = None
+            if schema:
+                try:
+                    json_schema = json_module.loads(schema)
+                    print(f"📋 Using JSON schema with {len(json_schema)} fields")
+                except json_module.JSONDecodeError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid JSON schema: {e}"
+                    )
+            else:
+                print("⚠️  No JSON schema provided, using general extraction")
+            
+            # Save upload to temporary path
+            tmp_dir = Path("/tmp/docstrange_modal")
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / file.filename
+            
+            print(f"💾 Saving uploaded file to {tmp_path}...")
+            with open(tmp_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            print(f"✅ File saved ({time.time() - start_time:.1f}s)")
+
+            try:
+                print(f"🔍 Starting structured extraction with {model}...")
+                extract_start = time.time()
+                
+                # Use the pre-loaded extractor for structured extraction
+                result = self.extractors[model].extract_structured(
+                    str(tmp_path),
+                    json_schema=json_schema
+                )
+                
+                print(f"✅ Structured extraction complete ({time.time() - extract_start:.1f}s)")
+                print(f"📊 Total request time: {time.time() - start_time:.1f}s")
+
+                # Return full structured data
+                return {
+                    "status": "ok",
+                    "model": model,
+                    "structured_data": result.get("structured_data") if isinstance(result, dict) else result,
+                    "processing_time": f"{time.time() - start_time:.1f}s"
+                }
+
+            except Exception as e:
+                import traceback
+                error_msg = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+                print(f"❌ Error during structured extraction: {error_msg}")
                 raise HTTPException(
                     status_code=500,
                     detail=error_msg

@@ -2,7 +2,7 @@
 
 import os
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from .processors import (
     PDFProcessor,
@@ -165,6 +165,60 @@ class DocumentExtractor:
         }
         
         return ConversionResult(text, metadata)
+    
+    def extract_structured(self, file_path: str, json_schema: Optional[dict] = None) -> dict:
+        """Extract structured data from a file using GPU models.
+        
+        Args:
+            file_path: Path to the file to extract
+            json_schema: Optional JSON schema to guide extraction
+            
+        Returns:
+            Dictionary containing structured data
+            
+        Raises:
+            FileNotFoundError: If the file doesn't exist
+            ConversionError: If extraction fails
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+    def extract_structured(self, file_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data from a file using GPU models.
+        
+        Args:
+            file_path: Path to the file to extract from
+            json_schema: Optional JSON schema to guide extraction
+            
+        Returns:
+            Dictionary containing structured data
+            
+        Raises:
+            ConversionError: If GPU processor is not available
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Get GPU processor
+        gpu_processor = None
+        for processor in self.processors:
+            if isinstance(processor, GPUProcessor):
+                gpu_processor = processor
+                break
+        
+        if not gpu_processor:
+            raise ConversionError("GPU processor not available for structured extraction")
+        
+        logger.info(f"Extracting structured data from {file_path} with schema: {json_schema is not None}")
+        
+        # First process the file to get the result
+        result = gpu_processor.process(file_path)
+        
+        # Then use the result's extract_data method with the schema
+        if hasattr(result, 'extract_data'):
+            structured_data = result.extract_data(json_schema=json_schema)
+            return structured_data
+        else:
+            raise ConversionError(f"Model {self.model} does not support structured extraction")
     
     def get_processing_mode(self) -> str:
         """Get the current processing mode.

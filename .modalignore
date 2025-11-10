@@ -1,0 +1,47 @@
+# Ignore git files
+.git/
+.gitignore
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Ignore virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore test files
+tests/
+.pytest_cache/
+
+# Ignore documentation
+docs/
+*.md
+!README.md
+
+# Ignore local development files
+.env
+.env.local
+*.log
+
+# Ignore large model caches (they'll be in the volume)
+.cache/
+models/
