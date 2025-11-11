@@ -263,14 +263,14 @@ Example:
   "watermark": "CONFIDENTIAL"
 }"""
             
-            # Load the image
-            image = Image.open(self.file_path)
+            # Load the image as PIL Image object (VLMs expect Image objects, not file:// URLs)
+            image = Image.open(self.file_path).convert("RGB")
             
             # Prepare messages for the model
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": [
-                    {"type": "image", "image": f"file://{self.file_path}"},
+                    {"type": "image", "image": image},
                     {"type": "text", "text": prompt},
                 ]},
             ]

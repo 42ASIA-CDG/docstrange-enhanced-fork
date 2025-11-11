@@ -2,7 +2,9 @@
 
 import logging
 import os
-from typing import Optional
+import json
+import re
+from typing import Optional, Dict, Any
 from pathlib import Path
 from PIL import Image
 
@@ -100,16 +102,109 @@ class NanonetsDocumentProcessor:
         """
         return self.extract_text(image_path)
     
+    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data using JSON schema.
+        
+        Args:
+            image_path: Path to the image file
+            json_schema: Optional JSON schema to guide extraction
+            
+        Returns:
+            Structured data as dictionary
+        """
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return {}
+            
+            # Build prompt based on schema
+            if json_schema:
+                schema_str = json.dumps(json_schema, indent=2)
+                prompt = f"""Extract information from this document and return it as a JSON object that matches this schema:
+
+{schema_str}
+
+Return ONLY the JSON object, no additional text or explanations."""
+            else:
+                prompt = "Extract all information from this document and return it as a structured JSON object. Include all relevant fields like invoice number, dates, amounts, items, etc."
+            
+            # Use the model to extract structured data
+            image = Image.open(image_path).convert("RGB")
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant that extracts structured data from documents."},
+                {"role": "user", "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": prompt},
+                ]},
+            ]
+            
+            text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = self.processor(text=[text], images=[image], padding=True, return_tensors="pt")
+            inputs = inputs.to(self.model.device)
+            
+            output_ids = self.model.generate(**inputs, max_new_tokens=2048, do_sample=False)
+            generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
+            
+            output_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+            result = output_text[0]
+            
+            # Parse JSON from the response
+            parsed_data = self._parse_json(result)
+            
+            # Return in consistent format
+            return {
+                "structured_data": parsed_data,
+                "format": "structured_json",
+                "extractor": "nanonets",
+                "method": "nanonets_model_with_schema" if json_schema else "nanonets_model"
+            }
+            
+        except Exception as e:
+            logger.error(f"Nanonets structured data extraction failed: {e}")
+            return {}
+    
+    def _parse_json(self, text: str) -> Dict[str, Any]:
+        """Parse JSON from model output, handling common formatting issues.
+        
+        Args:
+            text: Raw text output from model
+            
+        Returns:
+            Parsed JSON dictionary
+        """
+        try:
+            # Try direct JSON parsing first
+            return json.loads(text)
+        except json.JSONDecodeError:
+            # Try to find JSON in code blocks
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            # Try to find any JSON object in the text
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    pass
+            
+            logger.warning(f"Failed to parse JSON from text: {text[:200]}...")
+            return {}
+    
     def _extract_text_with_nanonets(self, image_path: str, max_new_tokens: int = 4096) -> str:
         """Extract text using Nanonets OCR model."""
         try:
             prompt = """Extract the text from the above document as if you were reading it naturally. Return the tables in html format. Return the equations in LaTeX representation. If there is an image in the document and image caption is not present, add a small description of the image inside the <img></img> tag; otherwise, add the image caption inside <img></img>. Watermarks should be wrapped in brackets. Ex: <watermark>OFFICIAL COPY</watermark>. Page numbers should be wrapped in brackets. Ex: <page_number>14</page_number> or <page_number>9/22</page_number>. Prefer using ☐ and ☑ for check boxes."""
             
-            image = Image.open(image_path)
+            image = Image.open(image_path).convert("RGB")
             messages = [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": [
-                    {"type": "image", "image": f"file://{image_path}"},
+                    {"type": "image", "image": image},
                     {"type": "text", "text": prompt},
                 ]},
             ]

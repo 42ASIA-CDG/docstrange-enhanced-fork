@@ -117,6 +117,27 @@ class NanonetsOCRService(OCRService):
         except Exception as e:
             logger.error(f"Nanonets OCR layout-aware extraction failed: {e}")
             return ""
+    
+    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data using Nanonets OCR with optional JSON schema.
+        
+        Args:
+            image_path: Path to the image file
+            json_schema: Optional JSON schema to guide extraction
+            
+        Returns:
+            Structured data as dictionary
+        """
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return {}
+            
+            return self._processor.extract_structured_data(image_path, json_schema)
+            
+        except Exception as e:
+            logger.error(f"Nanonets structured extraction failed: {e}")
+            return {}
 
 
 class NeuralOCRService(OCRService):
