@@ -77,26 +77,23 @@ class GPUConversionResult(ConversionResult):
         
         return html_content
     
-    def extract_data(self, specified_fields: Optional[list] = None, json_schema: Optional[dict] = None, 
-                     ollama_url: Optional[str] = None, ollama_model: Optional[str] = None) -> Dict[str, Any]:
-        """Export as structured JSON using Nanonets GPU model (primary) or Ollama (fallback).
+    def extract_data(self, json_schema: Optional[Dict[str, Any]] = None, 
+                     specified_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Extract structured data from the GPU processing result.
         
-        Priority order:
-        1. Nanonets GPU model with schema (if json_schema provided and GPU available)
-        2. Nanonets GPU model without schema (if GPU available)
-        3. Ollama post-processing (if GPU not available but Ollama is)
-        4. Base JSON conversion (final fallback)
+        This method enables structured data extraction using either:
+        1. JSON schema - for VLM-based extraction with a defined schema
+        2. Specified fields - for LLM-based extraction of specific fields
+        3. General extraction - using the already-extracted content
         
         Args:
-            specified_fields: List of specific fields to extract (uses Ollama if GPU unavailable)
-            json_schema: JSON schema to guide GPU model extraction (primary method)
-            ollama_url: Ollama server URL for fallback processing (default: http://localhost:11434)
-            ollama_model: Model name for fallback processing (default: llama3.2)
+            json_schema: Optional JSON schema to guide extraction
+            specified_fields: Optional list of specific fields to extract
             
         Returns:
-            Dictionary containing the JSON representation
+            Dictionary with extracted structured data
         """
-        print("=== GPUConversionResult.extract_data() called ===")
+        print("\n=== GPUConversionResult.extract_data() called ===")
         print(f"gpu_processor: {self.gpu_processor}")
         print(f"file_path: {self.file_path}")
         print(f"json_schema provided: {json_schema is not None}")
@@ -104,69 +101,84 @@ class GPUConversionResult(ConversionResult):
         print(f"file_exists: {os.path.exists(self.file_path) if self.file_path else False}")
         
         try:
-            # PRIORITY 1: If we have GPU processor and file, use the selected model directly
-            if self.gpu_processor and self.file_path and os.path.exists(self.file_path):
-                ocr_service = self.gpu_processor._get_ocr_service()
+            # Check if we have a GPU processor
+            if not self.gpu_processor:
+                logger.warning("No GPU processor available, returning content as-is")
+                return {"content": self.content}
+            
+            # Get the OCR service from GPU processor
+            ocr_service = self.gpu_processor._get_ocr_service()
+            
+            # For JSON schema extraction with VLM models
+            if json_schema and hasattr(ocr_service, 'extract_structured_data'):
+                logger.info("Using VLM model for structured JSON extraction")
                 
-                # Check if the OCR service supports structured data extraction (e.g., Donut)
-                if hasattr(ocr_service, 'extract_structured_data') and callable(getattr(ocr_service, 'extract_structured_data')):
-                    logger.info(f"Using {self.ocr_provider} model for JSON extraction with schema")
+                # Check if the file is a PDF
+                _, ext = os.path.splitext(str(self.file_path).lower())
+                
+                if ext == '.pdf':
+                    logger.info("PDF detected - converting first page to image for VLM extraction")
+                    
+                    # Convert PDF to images (just the first page for structured extraction)
+                    try:
+                        from pdf2image import convert_from_path
+                        import tempfile
+                        
+                        # Get first page as image
+                        images = convert_from_path(self.file_path, dpi=200, first_page=1, last_page=1)
+                        
+                        if images:
+                            # Save first page to temporary file
+                            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                                images[0].save(tmp.name, 'PNG')
+                                temp_image_path = tmp.name
+                            
+                            try:
+                                # Extract structured data from the first page image
+                                result = ocr_service.extract_structured_data(temp_image_path, json_schema)
+                                logger.info(f"Structured extraction successful from PDF page 1")
+                                return result
+                            finally:
+                                # Clean up temporary file
+                                try:
+                                    os.unlink(temp_image_path)
+                                except:
+                                    pass
+                        else:
+                            logger.warning("Could not convert PDF page to image, falling back to text-based extraction")
+                    
+                    except Exception as e:
+                        logger.error(f"PDF to image conversion failed: {e}")
+                        logger.info("Falling back to text-based extraction")
+                
+                else:
+                    # For image files, use them directly
                     try:
                         result = ocr_service.extract_structured_data(self.file_path, json_schema)
+                        logger.info(f"Structured extraction successful")
                         return result
                     except Exception as e:
-                        logger.warning(f"Structured extraction failed: {e}, falling back to Nanonets")
-                        # Fall through to Nanonets extraction
+                        logger.error(f"Failed to extract structured data with {self.gpu_processor.model}: {e}")
+                        # Fall through to text-based extraction
+            
+            # Fallback: Use text-based extraction with specified fields or general extraction
+            if specified_fields:
+                logger.info("Using LLM field extraction (fallback)")
+                return self._extract_specified_fields(specified_fields)
+            else:
+                # If no schema or fields specified, return the extracted content
+                logger.info("Returning extracted content as-is")
+                return {
+                    "content": self.content,
+                    "model": getattr(self.gpu_processor, 'model', 'unknown'),
+                    "extraction_method": "text_extraction"
+                }
                 
-                # Fallback to Nanonets-style extraction for models that support it
-                if json_schema:
-                    logger.info("Using GPU model for JSON extraction with schema")
-                    return self._extract_json_with_model(json_schema=json_schema)
-                else:
-                    logger.info("Using GPU model for JSON extraction")
-                    return self._extract_json_with_model()
-            
-            # PRIORITY 2: Fallback to Ollama if GPU model is not available
-            # Only use this if we don't have GPU processor or file
-            if specified_fields or json_schema:
-                logger.info("GPU model not available, trying Ollama for extraction")
-                try:
-                    from docstrange.services import OllamaFieldExtractor
-                    extractor = OllamaFieldExtractor(
-                        base_url=ollama_url or "http://localhost:11434",
-                        model=ollama_model or "llama3.2"
-                    )
-                    
-                    if extractor.is_available():
-                        if specified_fields:
-                            extracted_data = extractor.extract_fields(self.content, specified_fields)
-                            return {
-                                "extracted_fields": extracted_data,
-                                "requested_fields": specified_fields,
-                                "format": "gpu_specified_fields",
-                                "extractor": "ollama",
-                                "gpu_processing_info": self.get_ocr_info()
-                            }
-                        elif json_schema:
-                            extracted_data = extractor.extract_with_schema(self.content, json_schema)
-                            return {
-                                "extracted_data": extracted_data,
-                                "schema": json_schema,
-                                "format": "gpu_json_schema",
-                                "extractor": "ollama",
-                                "gpu_processing_info": self.get_ocr_info()
-                            }
-                    else:
-                        logger.warning("Ollama not available, using fallback JSON conversion")
-                except Exception as e:
-                    logger.warning(f"Ollama extraction failed: {e}, using fallback JSON conversion")
-            
-            # PRIORITY 3: Final fallback to base JSON conversion
-            logger.info("Using fallback JSON conversion")
-            return self._convert_to_base_json()
         except Exception as e:
-            logger.warning(f"Failed to extract JSON with model: {e}. Using fallback conversion.")
-            return self._convert_to_base_json()
+            logger.error(f"Error in extract_data: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e), "content": self.content}
     
     def _extract_json_with_model(self, json_schema: Optional[dict] = None) -> Dict[str, Any]:
         """Extract structured JSON using Nanonets model with specific prompt.

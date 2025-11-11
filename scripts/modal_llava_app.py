@@ -1,11 +1,15 @@
 """
 Modal + FastAPI app to run GPU-accelerated document extraction models.
 
-Supported Models:
-- nanonets: Nanonets OCR-s vision-language model (7B)
+Supported Models (Active):
+- nanonets: Nanonets OCR-s vision-language model (7B) - Reliable baseline
+- qwen2vl: Qwen2-VL vision-language model (7B) - Production stable
+- qwen3vl: Qwen3-VL vision-language model (8B) - Latest generation, 32 languages, 256K context
+
+Archived Models (Not loaded):
 - llava: LLaVA-1.5-7B vision-language model
-- qwen2vl: Qwen2-VL vision-language model (7B)
 - phi3vision: Phi-3 Vision model (4.2B)
+- paddleocr: PaddleOCR fast text extraction (~100M)
 
 Usage:
 1. Install modal CLI and login: `modal login`
@@ -20,7 +24,8 @@ Notes:
 
 Endpoints:
 - GET / - Health check with list of loaded models
-- POST /extract - multipart file upload (field name `file`), query param `model` (nanonets|llava|qwen2vl|phi3vision)
+- POST /extract - multipart file upload (field name `file`), query param `model` (nanonets|qwen2vl|qwen3vl)
+- POST /extract_structured - structured extraction with JSON schema
 
 This is a test harness; do not expose publicly without authentication.
 """
@@ -38,9 +43,15 @@ model_cache = modal.Volume.from_name("docstrange-model-cache", create_if_missing
 # Create Modal image with dependencies + install the docstrange package
 image = (
     modal.Image.debian_slim(python_version="3.10")
+    .apt_install("poppler-utils")  # Required for PDF processing (pdf2image)
     .pip_install(
-        "torch", "transformers", "huggingface_hub", "accelerate", "Pillow",
+        "torch", "transformers>=4.57.0", "huggingface_hub", "accelerate", "Pillow",
         "fastapi", "uvicorn", "python-multipart"
+    )
+    # Add PaddleOCR dependencies (optional - only if using paddleocr model)
+    .pip_install(
+        "paddlepaddle-gpu",  # or "paddlepaddle" for CPU-only
+        "paddleocr"
     )
     .add_local_dir(repo_root, remote_path="/pkg", copy=True)
     .run_commands(
@@ -50,13 +61,16 @@ image = (
 
 app = modal.App("docstrange-llava-test")
 
-# List of models to pre-load
-SUPPORTED_MODELS = ["nanonets", "qwen2vl"]
+# List of models to pre-load (only active production models)
+SUPPORTED_MODELS = ["nanonets", "qwen2vl", "qwen3vl"]
+
+# Archived models (not loaded, but code remains available)
+# ARCHIVED_MODELS = ["llava", "phi3vision", "paddleocr"]
 
 
 @app.cls(
     image=image,
-    gpu="A100",
+    gpu="H100",
     timeout=1200,  # 20 minutes for model loading + inference
     scaledown_window=300,  # Keep container warm for 5 minutes
     volumes={"/cache": model_cache},  # Mount to /cache to avoid conflict with existing /root/.cache

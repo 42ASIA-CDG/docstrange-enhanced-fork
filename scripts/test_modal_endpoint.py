@@ -13,8 +13,8 @@ EXTRACT_STRUCTURED_URL = f"{BASE_URL}/extract_structured"
 
 # Use relative path from scripts/ to root
 script_dir = Path(__file__).parent
-image_path = script_dir.parent / "test_invoice_donut.png"
-
+# image_path = script_dir.parent / "test_invoice_donut.png"
+image_path = "/home/mkurkar/Downloads/02-invoices/invoice_INV-2025-0001.pdf"
 # Get model and test type from command line
 model = sys.argv[1] if len(sys.argv) > 1 else "nanonets"
 test_schema = "--schema" in sys.argv or "-s" in sys.argv
@@ -33,7 +33,7 @@ def test_basic_extraction():
 
     try:
         with open(image_path, "rb") as f:
-            files = {"file": (image_path.name, f, "image/png")}
+            files = {"file": ("invoice_INV-2025-0001.pdf", f, "application/pdf")}
             params = {"model": model}
             
             response = requests.post(
@@ -110,7 +110,7 @@ def test_structured_extraction():
 
     try:
         with open(image_path, "rb") as f:
-            files = {"file": (image_path.name, f, "image/png")}
+            files = {"file": ("invoice_INV-2025-0001.pdf", f, "application/pdf")}
             data = {
                 "model": model,
                 "schema": json.dumps(invoice_schema)
@@ -187,10 +187,13 @@ if __name__ == "__main__":
     print()
     print("💡 Usage:")
     print(f"  python {Path(__file__).name} [model] [--schema]")
-    print(f"  Models: nanonets, llava, qwen2vl, phi3vision")
+    print(f"  Active Models: nanonets, qwen2vl, qwen3vl")
     print(f"  --schema: Run structured extraction test with JSON schema")
     print()
     print("Examples:")
     print(f"  python {Path(__file__).name} nanonets")
-    print(f"  python {Path(__file__).name} llava --schema")
+    print(f"  python {Path(__file__).name} qwen2vl")
+    print(f"  python {Path(__file__).name} qwen3vl --schema")
+    print()
+    print("📦 Archived models (not loaded): llava, phi3vision, paddleocr, donut")
     print()

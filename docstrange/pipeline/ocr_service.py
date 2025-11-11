@@ -187,51 +187,7 @@ class NeuralOCRService(OCRService):
             return ""
 
 
-class DonutOCRService(OCRService):
-    """Donut OCR implementation for end-to-end document understanding."""
-    
-    def __init__(self):
-        """Initialize the service."""
-        from .donut_processor import DonutProcessor
-        self._processor = DonutProcessor()
-        logger.info("DonutOCRService initialized")
-    
-    @property
-    def model(self):
-        """Get the Donut model."""
-        return self._processor.model
-    
-    @property
-    def processor(self):
-        """Get the Donut processor."""
-        return self._processor.processor
-    
-    def extract_text(self, image_path: str) -> str:
-        """Extract text using Donut."""
-        try:
-            if not os.path.exists(image_path):
-                logger.error(f"Image file does not exist: {image_path}")
-                return ""
-            
-            text = self._processor.extract_text(image_path)
-            logger.info(f"Donut extracted text length: {len(text)}")
-            return text.strip()
-        except Exception as e:
-            logger.error(f"Donut OCR extraction failed: {e}")
-            return ""
-    
-    def extract_text_with_layout(self, image_path: str) -> str:
-        """Extract text with layout using Donut."""
-        return self.extract_text(image_path)
-    
-    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Extract structured data using Donut."""
-        try:
-            return self._processor.extract_structured_data(image_path, json_schema)
-        except Exception as e:
-            logger.error(f"Donut structured data extraction failed: {e}")
-            raise
-
+# ========== ACTIVE MODEL SERVICES ==========
 
 class Qwen2VLOCRService(OCRService):
     """Qwen2-VL OCR implementation for advanced structured extraction."""
@@ -279,110 +235,80 @@ class Qwen2VLOCRService(OCRService):
             raise
 
 
-class Phi3VisionOCRService(OCRService):
-    """Phi-3-Vision OCR implementation for long document processing."""
+class Qwen3VLOCRService(OCRService):
+    """Qwen3-VL OCR implementation for state-of-the-art vision-language understanding.
+    
+    Qwen3-VL (Oct 2025) features:
+    - Enhanced OCR supporting 32 languages
+    - Native 256K context (expandable to 1M)
+    - Superior spatial perception and reasoning
+    - New AutoModelForImageTextToText architecture
+    """
     
     def __init__(self):
         """Initialize the service."""
-        from .phi3_vision_processor import Phi3VisionProcessor
-        self._processor = Phi3VisionProcessor()
-        logger.info("Phi3VisionOCRService initialized")
+        from .qwen3vl_processor import Qwen3VLProcessor
+        self._processor = Qwen3VLProcessor()
+        logger.info("Qwen3-VL OCR Service initialized")
     
     @property
     def model(self):
-        """Get the Phi-3-Vision model."""
+        """Get the Qwen3-VL model."""
         return self._processor.model
     
     @property
     def processor(self):
-        """Get the Phi-3-Vision processor."""
+        """Get the Qwen3-VL processor."""
         return self._processor.processor
     
     def extract_text(self, image_path: str) -> str:
-        """Extract text using Phi-3-Vision."""
+        """Extract text using Qwen3-VL."""
         try:
             if not os.path.exists(image_path):
                 logger.error(f"Image file does not exist: {image_path}")
                 return ""
             
             text = self._processor.extract_text(image_path)
-            logger.info(f"Phi-3-Vision extracted text length: {len(text)}")
+            logger.info(f"Qwen3-VL extracted text length: {len(text)}")
             return text.strip()
         except Exception as e:
-            logger.error(f"Phi-3-Vision OCR extraction failed: {e}")
+            logger.error(f"Qwen3-VL OCR extraction failed: {e}")
             return ""
     
     def extract_text_with_layout(self, image_path: str) -> str:
-        """Extract text with layout using Phi-3-Vision."""
+        """Extract text with layout using Qwen3-VL."""
         return self.extract_text(image_path)
     
     def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Extract structured data using Phi-3-Vision."""
+        """Extract structured data using Qwen3-VL."""
         try:
             return self._processor.extract_structured_data(image_path, json_schema)
         except Exception as e:
-            logger.error(f"Phi-3-Vision structured data extraction failed: {e}")
+            logger.error(f"Qwen3-VL structured data extraction failed: {e}")
             raise
 
 
-class LLaVAOCRService(OCRService):
-    """LLaVA OCR implementation for vision-language document understanding."""
-    
-    def __init__(self):
-        """Initialize the service."""
-        from .llava_processor import LLaVAProcessor
-        self._processor = LLaVAProcessor()
-        logger.info("LLaVAOCRService initialized")
-    
-    @property
-    def model(self):
-        """Get the LLaVA model."""
-        return self._processor.model
-    
-    @property
-    def processor(self):
-        """Get the LLaVA processor."""
-        return self._processor.processor
-    
-    def extract_text(self, image_path: str) -> str:
-        """Extract text using LLaVA."""
-        try:
-            if not os.path.exists(image_path):
-                logger.error(f"Image file does not exist: {image_path}")
-                return ""
-            
-            text = self._processor.extract_text(image_path)
-            logger.info(f"LLaVA extracted text length: {len(text)}")
-            return text.strip()
-        except Exception as e:
-            logger.error(f"LLaVA OCR extraction failed: {e}")
-            return ""
-    
-    def extract_text_with_layout(self, image_path: str) -> str:
-        """Extract text with layout using LLaVA."""
-        return self.extract_text(image_path)
-    
-    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Extract structured data using LLaVA."""
-        try:
-            return self._processor.extract_structured_data(image_path, json_schema)
-        except Exception as e:
-            logger.error(f"LLaVA structured data extraction failed: {e}")
-            raise
-
+# ========== FACTORY ==========
 
 class OCRServiceFactory:
-    """Factory for creating OCR services based on configuration."""
+    """Factory for creating OCR services based on configuration.
+    
+    Active Models: nanonets, qwen2vl, qwen3vl
+    Archived Models: neural, donut, phi3vision, llava, paddleocr
+    """
     
     @staticmethod
     def create_service(provider: str = None) -> OCRService:
         """Create OCR service based on provider configuration.
         
         Args:
-            provider: OCR provider name ('nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision', 'llava')
+            provider: OCR provider name (active: 'nanonets', 'qwen2vl', 'qwen3vl')
             
         Returns:
             OCRService instance
+            
+        Raises:
+            ValueError: If provider is not supported or is archived
         """
         from docstrange.config import InternalConfig
         
@@ -391,18 +317,21 @@ class OCRServiceFactory:
         
         provider_lower = provider.lower()
         
+        # Active models only
         if provider_lower == 'nanonets':
             return NanonetsOCRService()
-        elif provider_lower == 'neural':
-            return NeuralOCRService()
-        elif provider_lower == 'donut':
-            return DonutOCRService()
         elif provider_lower == 'qwen2vl':
             return Qwen2VLOCRService()
-        elif provider_lower == 'phi3vision':
-            return Phi3VisionOCRService()
-        elif provider_lower == 'llava':
-            return LLaVAOCRService()
+        elif provider_lower == 'qwen3vl':
+            return Qwen3VLOCRService()
+        
+        # Archived models - provide helpful error message
+        elif provider_lower in ['neural', 'donut', 'phi3vision', 'llava', 'paddleocr']:
+            raise ValueError(
+                f"Model '{provider}' has been archived and is no longer actively supported. "
+                f"Available models: {', '.join(OCRServiceFactory.get_available_providers())}. "
+                f"To use archived models, check docstrange/pipeline/archive/"
+            )
         else:
             raise ValueError(
                 f"Unsupported OCR provider: {provider}. "
@@ -411,9 +340,9 @@ class OCRServiceFactory:
     
     @staticmethod
     def get_available_providers() -> List[str]:
-        """Get list of available OCR providers.
+        """Get list of active OCR providers.
         
         Returns:
-            List of available provider names
+            List of active provider names (archived models excluded)
         """
-        return ['nanonets', 'neural', 'donut', 'qwen2vl', 'phi3vision', 'llava'] 
+        return ['nanonets', 'qwen2vl', 'qwen3vl'] 

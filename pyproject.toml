@@ -48,12 +48,13 @@ dependencies = [
     "huggingface_hub>=0.23.0",
     "tqdm>=4.64.0",
     # Conservative versions for Python 3.8 to avoid build issues
+    # Note: Qwen3-VL requires transformers >= 4.57.0, but not all models need it
     "transformers>=4.20.0,<4.50.0; python_version<='3.8'",
     "tokenizers>=0.13.0,<0.20.0; python_version<='3.8'",
     "setuptools>=65.0.0; python_version<='3.8'",
     "wheel>=0.37.0; python_version<='3.8'",
-    # Latest compatible versions for Python 3.9+
-    "transformers>=4.20.0; python_version>='3.9'",
+    # Python 3.9+ supports latest transformers for Qwen3-VL
+    "transformers>=4.57.0; python_version>='3.9'",
     "tokenizers>=0.13.0; python_version>='3.9'",
 ]
 
