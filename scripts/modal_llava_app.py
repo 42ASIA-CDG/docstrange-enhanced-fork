@@ -49,10 +49,10 @@ image = (
         "fastapi", "uvicorn", "python-multipart"
     )
     # Add PaddleOCR dependencies (optional - only if using paddleocr model)
-    .pip_install(
-        "paddlepaddle-gpu",  # or "paddlepaddle" for CPU-only
-        "paddleocr"
-    )
+    # .pip_install(
+    #     "paddlepaddle-gpu",  # or "paddlepaddle" for CPU-only
+    #     "paddleocr"
+    # )
     .add_local_dir(repo_root, remote_path="/pkg", copy=True)
     .run_commands(
         "cd /pkg && pip install -e ."
