@@ -75,7 +75,9 @@ class HunyuanOCRProcessor:
             # Set sampling parameters
             self.sampling_params = SamplingParams(
                 temperature=0,
-                max_tokens=16384
+                max_tokens=8192,  # Increased for complex documents
+                stop=None,  # Don't stop early
+                skip_special_tokens=True
             )
             
             logger.info("HunyuanOCR loaded successfully with vLLM")
@@ -405,28 +407,54 @@ class HunyuanOCRProcessor:
                 else:
                     prompt = "Extract all information from the image and return as structured JSON. Return ONLY the JSON, no explanation."
             
-            # Extract
+            # Extract with retry logic
             logger.info("Generating structured data (may take a few seconds)...")
             print("⏳ Generating structured data with HunyuanOCR...")
             
-            output_text = self.extract_text(image_path, prompt)
+            max_retries = 2
+            output_text = None
+            parsed_data = None
             
-            logger.info(f"Generated output length: {len(output_text)} characters")
+            for attempt in range(max_retries):
+                try:
+                    output_text = self.extract_text(image_path, prompt)
+                    logger.info(f"Generated output length: {len(output_text)} characters (attempt {attempt + 1}/{max_retries})")
+                    
+                    # Check for hallucination before parsing
+                    if self._has_excessive_repetition(output_text):
+                        logger.warning(f"Attempt {attempt + 1}: Model output contains repetition")
+                        if attempt < max_retries - 1:
+                            logger.info("Retrying with modified prompt...")
+                            prompt = prompt + " Provide complete, well-formed JSON."
+                            continue
+                        else:
+                            return {
+                                "structured_data": {},
+                                "error": "Model hallucination detected after retries",
+                                "model": "hunyuan_ocr",
+                                "raw_output": output_text[:500]
+                            }
+                    
+                    # Parse JSON
+                    parsed_data = self._parse_json(output_text)
+                    
+                    # Check if parsing succeeded
+                    if not (isinstance(parsed_data, dict) and "error" in parsed_data):
+                        logger.info(f"✅ Successfully parsed JSON on attempt {attempt + 1}")
+                        break
+                    
+                    # If last attempt, let it fall through
+                    if attempt == max_retries - 1:
+                        break
+                        
+                    logger.warning(f"Attempt {attempt + 1}: Failed to parse JSON, retrying...")
+                    
+                except Exception as e:
+                    logger.error(f"Attempt {attempt + 1} failed: {e}")
+                    if attempt == max_retries - 1:
+                        raise
             
-            # Check for hallucination before parsing
-            if self._has_excessive_repetition(output_text):
-                logger.error("Model output contains hallucination/repetition")
-                return {
-                    "structured_data": {},
-                    "error": "Model hallucination detected - try with different prompt or image quality",
-                    "model": "hunyuan_ocr",
-                    "raw_output": output_text[:500]
-                }
-            
-            # Parse JSON
-            parsed_data = self._parse_json(output_text)
-            
-            # Check if parsing failed
+            # Check if parsing failed after all retries
             if isinstance(parsed_data, dict) and "error" in parsed_data:
                 return {
                     "structured_data": {},
@@ -492,7 +520,7 @@ class HunyuanOCRProcessor:
         return self.extract_text(image_path, prompt)
     
     def _parse_json(self, text: str) -> Dict[str, Any]:
-        """Parse JSON from text, handling markdown code blocks and common issues.
+        """Parse JSON from text, handling markdown code blocks, incomplete JSON, and common issues.
         
         Args:
             text: Text containing JSON
@@ -517,7 +545,9 @@ class HunyuanOCRProcessor:
         # Try direct parsing
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.debug(f"Initial JSON parse failed: {e}")
+            
             # Try cleaning
             try:
                 text = text.strip('`').strip()
@@ -525,6 +555,36 @@ class HunyuanOCRProcessor:
                 text = re.sub(r',(\s*[}\]])', r'\1', text)
                 return json.loads(text)
             except json.JSONDecodeError:
+                # Check if JSON is incomplete (truncated)
+                if text.startswith('{') and not text.rstrip().endswith('}'):
+                    logger.warning("Detected incomplete JSON (missing closing brace)")
+                    # Try to auto-complete
+                    completed_text = text.rstrip()
+                    # Remove any trailing incomplete key-value (e.g., "vendor_tax)
+                    if '":' in completed_text:
+                        # Find last complete key-value pair
+                        last_quote_idx = completed_text.rfind('"', 0, -1)
+                        if last_quote_idx > 0:
+                            # Check if there's a complete value after it
+                            after_quote = completed_text[last_quote_idx+1:].strip()
+                            if after_quote and not after_quote.endswith((',', '}', ']')):
+                                # Truncate at last comma or start of incomplete field
+                                last_comma = completed_text.rfind(',', 0, last_quote_idx)
+                                if last_comma > 0:
+                                    completed_text = completed_text[:last_comma]
+                    
+                    # Add closing brace
+                    completed_text += '\n}'
+                    logger.info("Attempting to parse auto-completed JSON")
+                    try:
+                        # Clean trailing commas again
+                        completed_text = re.sub(r',(\s*[}\]])', r'\1', completed_text)
+                        result = json.loads(completed_text)
+                        logger.warning("⚠️  Successfully parsed incomplete JSON (data may be partial)")
+                        return result
+                    except json.JSONDecodeError as e2:
+                        logger.error(f"Auto-completion failed: {e2}")
+                
                 # Try to find first complete JSON object
                 json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
                 if json_match:
@@ -545,8 +605,8 @@ class HunyuanOCRProcessor:
                     logger.error("Model output contains excessive repetition (hallucination)")
                     return {"error": "Model hallucination detected - excessive repetitive patterns", "raw_output": original_text[:500]}
                 
-                logger.error(f"Failed to parse JSON: {original_text[:200]}")
-                return {"error": "Failed to parse JSON", "raw_output": original_text}
+                logger.error(f"Failed to parse JSON after all attempts. First 300 chars: {original_text[:300]}")
+                return {"error": "Failed to parse JSON", "parse_details": str(e), "raw_output": original_text}
     
     @staticmethod
     def _has_excessive_repetition(text: str, threshold: int = 50) -> bool:
