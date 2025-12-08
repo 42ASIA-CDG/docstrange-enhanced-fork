@@ -309,12 +309,126 @@ class Qwen3VLOCRService(OCRService):
             raise
 
 
+class HunyuanOCRService(OCRService):
+    """HunyuanOCR implementation for efficient end-to-end OCR tasks.
+    
+    HunyuanOCR (Nov 2025) features:
+    - Lightweight 1B parameter design with SOTA performance
+    - Comprehensive OCR (spotting, parsing, extraction, translation)
+    - Support for 100+ languages
+    - End-to-end single instruction inference
+    - Both vLLM (fast) and Transformers support
+    """
+    
+    def __init__(self, use_vllm: bool = True):
+        """Initialize the service.
+        
+        Args:
+            use_vllm: Use vLLM for faster inference (recommended)
+        """
+        from .hunyuan_ocr_processor import HunyuanOCRProcessor
+        self._processor = HunyuanOCRProcessor(use_vllm=use_vllm)
+        logger.info(f"HunyuanOCR Service initialized (vLLM={'enabled' if use_vllm else 'disabled'})")
+    
+    @property
+    def model(self):
+        """Get the HunyuanOCR model."""
+        return self._processor.model if not self._processor.use_vllm else self._processor.llm
+    
+    @property
+    def processor(self):
+        """Get the HunyuanOCR processor."""
+        return self._processor.processor
+    
+    def extract_text(self, image_path: str) -> str:
+        """Extract text using HunyuanOCR."""
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            # Use English extraction prompt
+            text = self._processor.extract_text(image_path, prompt="Extract the text in the image.")
+            logger.info(f"HunyuanOCR extracted text length: {len(text)}")
+            return text.strip()
+        except Exception as e:
+            logger.error(f"HunyuanOCR extraction failed: {e}")
+            return ""
+    
+    def extract_text_with_layout(self, image_path: str) -> str:
+        """Extract text with layout using HunyuanOCR."""
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            text = self._processor.extract_text_with_layout(image_path, language="english")
+            logger.info(f"HunyuanOCR layout-aware extracted text length: {len(text)}")
+            return text.strip()
+        except Exception as e:
+            logger.error(f"HunyuanOCR layout-aware extraction failed: {e}")
+            return ""
+    
+    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data using HunyuanOCR."""
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return {}
+            
+            return self._processor.extract_structured_data(image_path, json_schema=json_schema, language="english")
+        except Exception as e:
+            logger.error(f"HunyuanOCR structured data extraction failed: {e}")
+            raise
+    
+    def parse_document(self, image_path: str, **kwargs) -> str:
+        """Parse document with formulas, tables, and charts.
+        
+        Args:
+            image_path: Path to document image
+            **kwargs: Additional parsing options (include_formulas, include_tables, include_charts)
+            
+        Returns:
+            Parsed document in Markdown format
+        """
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            return self._processor.parse_document(image_path, language="english", **kwargs)
+        except Exception as e:
+            logger.error(f"HunyuanOCR document parsing failed: {e}")
+            return ""
+    
+    def translate_image(self, image_path: str, target_language: str = "english", is_document: bool = False) -> str:
+        """Translate text in image to target language.
+        
+        Args:
+            image_path: Path to image
+            target_language: Target language ("english" or "chinese")
+            is_document: Whether the image is a document
+            
+        Returns:
+            Translated text
+        """
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            return self._processor.translate_image(image_path, target_language, is_document)
+        except Exception as e:
+            logger.error(f"HunyuanOCR translation failed: {e}")
+            return ""
+
+
 # ========== FACTORY ==========
 
 class OCRServiceFactory:
     """Factory for creating OCR services based on configuration.
     
-    Active Models: nanonets, qwen2vl, qwen3vl
+    Active Models: nanonets, qwen2vl, qwen3vl, hunyuan_ocr
     Archived Models: neural, donut, phi3vision, llava, paddleocr
     """
     
@@ -323,7 +437,7 @@ class OCRServiceFactory:
         """Create OCR service based on provider configuration.
         
         Args:
-            provider: OCR provider name (active: 'nanonets', 'qwen2vl', 'qwen3vl')
+            provider: OCR provider name (active: 'nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr')
             
         Returns:
             OCRService instance
@@ -345,6 +459,8 @@ class OCRServiceFactory:
             return Qwen2VLOCRService()
         elif provider_lower == 'qwen3vl':
             return Qwen3VLOCRService()
+        elif provider_lower in ['hunyuan_ocr', 'hunyuanocr', 'hunyuan']:
+            return HunyuanOCRService()
         
         # Archived models - provide helpful error message
         elif provider_lower in ['neural', 'donut', 'phi3vision', 'llava', 'paddleocr']:
@@ -366,4 +482,4 @@ class OCRServiceFactory:
         Returns:
             List of active provider names (archived models excluded)
         """
-        return ['nanonets', 'qwen2vl', 'qwen3vl'] 
+        return ['nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr'] 
