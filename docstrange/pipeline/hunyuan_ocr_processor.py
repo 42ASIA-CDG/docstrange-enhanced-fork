@@ -72,12 +72,16 @@ class HunyuanOCRProcessor:
             # Load processor for chat template
             self.processor = AutoProcessor.from_pretrained(self.model_path)
             
-            # Set sampling parameters
+            # Set sampling parameters - tuned for HunyuanOCR
             self.sampling_params = SamplingParams(
-                temperature=0,
-                max_tokens=8192,  # Increased for complex documents
-                stop=None,  # Don't stop early
-                skip_special_tokens=True
+                temperature=0.0,
+                max_tokens=4096,  # HunyuanOCR optimal range
+                top_p=1.0,
+                top_k=-1,
+                stop=[],  # Empty list, not None - don't stop early
+                skip_special_tokens=True,
+                ignore_eos=False,  # Respect EOS but don't add extra stops
+                repetition_penalty=1.0  # No penalty, model handles this
             )
             
             logger.info("HunyuanOCR loaded successfully with vLLM")
@@ -228,6 +232,15 @@ class HunyuanOCRProcessor:
             # Generate
             output = self.llm.generate([inputs], self.sampling_params)[0]
             result = output.outputs[0].text
+            
+            # Log generation stats for debugging
+            finish_reason = output.outputs[0].finish_reason if hasattr(output.outputs[0], 'finish_reason') else 'unknown'
+            num_tokens = len(output.outputs[0].token_ids) if hasattr(output.outputs[0], 'token_ids') else 0
+            logger.debug(f"Generation finished: reason={finish_reason}, tokens={num_tokens}, length={len(result)}")
+            
+            # Warn if generation stopped unexpectedly early
+            if len(result) < 200 and finish_reason not in ['stop', 'length']:
+                logger.warning(f"⚠️ Short output detected ({len(result)} chars) - finish_reason: {finish_reason}")
             
             # Clean repeated substrings (vLLM-specific issue)
             result = self.clean_repeated_substrings(result)
@@ -397,10 +410,29 @@ class HunyuanOCRProcessor:
                     prompt = f"Extract the content of the fields: {fields_str} from the image and return it in JSON format."
             elif json_schema:
                 schema_str = json.dumps(json_schema, indent=2, ensure_ascii=False)
-                if language.lower() == "chinese":
-                    prompt = f"根据以下模式提取信息并返回JSON：\n\n{schema_str}\n\n仅返回JSON对象，无需解释。"
+                logger.debug(f"Schema size: {len(schema_str)} characters")
+                
+                # If schema is very large, simplify it
+                if len(schema_str) > 1000:
+                    logger.warning(f"⚠️ Large schema detected ({len(schema_str)} chars) - using simplified version")
+                    # Just use field names
+                    if isinstance(json_schema, dict) and 'properties' in json_schema:
+                        field_names = list(json_schema['properties'].keys())
+                        fields_str = json.dumps(field_names, ensure_ascii=False)
+                        if language.lower() == "chinese":
+                            prompt = f"提取图片中的: {fields_str} 的字段内容，并按照 JSON 格式返回。"
+                        else:
+                            prompt = f"Extract the content of the fields: {fields_str} from the image and return it in JSON format."
+                    else:
+                        if language.lower() == "chinese":
+                            prompt = "从图片中提取所有信息并以结构化JSON格式返回。仅返回JSON，无需解释。"
+                        else:
+                            prompt = "Extract all information from the image and return as structured JSON. Return ONLY the JSON, no explanation."
                 else:
-                    prompt = f"Extract information according to this schema and return JSON:\n\n{schema_str}\n\nReturn ONLY the JSON object, no explanation."
+                    if language.lower() == "chinese":
+                        prompt = f"根据以下模式提取信息并返回JSON：\n\n{schema_str}\n\n仅返回JSON对象，无需解释。"
+                    else:
+                        prompt = f"Extract information according to this schema and return JSON:\n\n{schema_str}\n\nReturn ONLY the JSON object, no explanation."
             else:
                 if language.lower() == "chinese":
                     prompt = "从图片中提取所有信息并以结构化JSON格式返回。仅返回JSON，无需解释。"
@@ -419,6 +451,20 @@ class HunyuanOCRProcessor:
                 try:
                     output_text = self.extract_text(image_path, prompt)
                     logger.info(f"Generated output length: {len(output_text)} characters (attempt {attempt + 1}/{max_retries})")
+                    
+                    # Check if output is suspiciously short (likely truncated)
+                    if len(output_text) < 300 and '```json' in output_text.lower():
+                        logger.warning(f"⚠️ Detected likely truncation ({len(output_text)} chars)")
+                        if attempt < max_retries - 1:
+                            logger.info("Retrying with simpler prompt to avoid truncation...")
+                            # Simplify prompt - complex schemas might cause issues
+                            if json_schema:
+                                # Try without the full schema
+                                if language.lower() == "chinese":
+                                    prompt = "提取图片中的所有信息并以JSON格式返回。仅返回JSON对象。"
+                                else:
+                                    prompt = "Extract all information from the image as JSON. Return only the JSON object."
+                            continue
                     
                     # Check for hallucination before parsing
                     if self._has_excessive_repetition(output_text):
