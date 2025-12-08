@@ -413,13 +413,31 @@ class HunyuanOCRProcessor:
             
             logger.info(f"Generated output length: {len(output_text)} characters")
             
+            # Check for hallucination before parsing
+            if self._has_excessive_repetition(output_text):
+                logger.error("Model output contains hallucination/repetition")
+                return {
+                    "structured_data": {},
+                    "error": "Model hallucination detected - try with different prompt or image quality",
+                    "model": "hunyuan_ocr",
+                    "raw_output": output_text[:500]
+                }
+            
             # Parse JSON
             parsed_data = self._parse_json(output_text)
             
+            # Check if parsing failed
+            if isinstance(parsed_data, dict) and "error" in parsed_data:
+                return {
+                    "structured_data": {},
+                    "error": parsed_data.get("error"),
+                    "model": "hunyuan_ocr",
+                    "raw_output": parsed_data.get("raw_output", output_text[:500])
+                }
+            
             return {
                 "structured_data": parsed_data,
-                "model": "hunyuan_ocr",
-                "raw_output": output_text if isinstance(parsed_data, dict) and "error" in parsed_data else None
+                "model": "hunyuan_ocr"
             }
             
         except Exception as e:
@@ -474,7 +492,7 @@ class HunyuanOCRProcessor:
         return self.extract_text(image_path, prompt)
     
     def _parse_json(self, text: str) -> Dict[str, Any]:
-        """Parse JSON from text, handling markdown code blocks.
+        """Parse JSON from text, handling markdown code blocks and common issues.
         
         Args:
             text: Text containing JSON
@@ -482,6 +500,15 @@ class HunyuanOCRProcessor:
         Returns:
             Parsed JSON dictionary
         """
+        original_text = text
+        
+        # Clean up common prefixes
+        text = text.strip()
+        
+        # Remove "json" prefix (common LLM output issue)
+        if text.lower().startswith('json'):
+            text = text[4:].strip()
+        
         # Try to extract JSON from markdown code blocks
         json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
         if json_match:
@@ -498,19 +525,56 @@ class HunyuanOCRProcessor:
                 text = re.sub(r',(\s*[}\]])', r'\1', text)
                 return json.loads(text)
             except json.JSONDecodeError:
-                # Last resort: try to find JSON object
-                json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                # Try to find first complete JSON object
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
                 if json_match:
                     try:
                         cleaned = json_match.group(0)
                         # Remove trailing commas
                         cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+                        # Check if this looks like hallucinated content (too many repeated patterns)
+                        if self._has_excessive_repetition(cleaned):
+                            logger.warning("Detected hallucinated/repetitive content in JSON")
+                            return {"error": "Model generated repetitive/hallucinated content", "raw_output": original_text[:500]}
                         return json.loads(cleaned)
-                    except:
+                    except json.JSONDecodeError:
                         pass
                 
-                logger.error(f"Failed to parse JSON: {text[:200]}")
-                return {"error": "Failed to parse JSON", "raw_output": text}
+                # Check if entire output is repetitive
+                if self._has_excessive_repetition(original_text):
+                    logger.error("Model output contains excessive repetition (hallucination)")
+                    return {"error": "Model hallucination detected - excessive repetitive patterns", "raw_output": original_text[:500]}
+                
+                logger.error(f"Failed to parse JSON: {original_text[:200]}")
+                return {"error": "Failed to parse JSON", "raw_output": original_text}
+    
+    @staticmethod
+    def _has_excessive_repetition(text: str, threshold: int = 50) -> bool:
+        """Check if text has excessive repetition (hallucination indicator).
+        
+        Args:
+            text: Text to check
+            threshold: Number of repetitions to consider excessive
+            
+        Returns:
+            True if excessive repetition detected
+        """
+        if len(text) < 100:
+            return False
+        
+        # Check for repeated short patterns
+        for pattern_len in range(3, 20):
+            pattern = text[:pattern_len]
+            count = text.count(pattern)
+            if count > threshold:
+                return True
+        
+        # Check for repeated Arabic characters or specific patterns
+        arabic_pattern = re.compile(r'(ب ط \d{3}\s*){10,}')  # Pattern like "ب ط 001 ب ط 002..."
+        if arabic_pattern.search(text):
+            return True
+        
+        return False
     
     def is_available(self) -> bool:
         """Check if HunyuanOCR model is available.
