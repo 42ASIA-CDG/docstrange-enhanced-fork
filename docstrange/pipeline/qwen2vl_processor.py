@@ -201,6 +201,19 @@ IMPORTANT RULES:
 7. AVOID repetition - if you see repeated values, write them only once
 8. Do not add any text before or after the JSON
 
+DATA CORRECTION RULES (CRITICAL):
+9. Convert ALL Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to Western numerals (0123456789)
+10. Verify mathematical calculations:
+    - Ensure line_items amounts = quantity × unit_price
+    - Ensure subtotal = sum of all line item amounts
+    - Ensure total = subtotal + tax - discount
+    - If calculations are wrong, CORRECT them to the right values
+11. Standardize dates to YYYY-MM-DD format (e.g., "12/27/2021" → "2021-12-27")
+12. Remove duplicates from arrays (tags, line_items, etc.)
+13. Ensure all monetary values are numbers, not strings
+14. Clean up text: remove extra spaces, fix obvious OCR errors
+15. Validate required fields are not empty or null
+
 JSON output:"""
             else:
                 prompt = """Extract all information from this document and return it as a structured JSON object.
