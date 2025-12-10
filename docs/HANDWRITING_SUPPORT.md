@@ -76,8 +76,13 @@ result = extractor.extract_structured("complex_form.jpg", json_schema=schema)
 ```
 
 **Pipeline:**
-1. **TrOCR** extracts clean text from handwriting
-2. **Qwen2-VL** structures the text into JSON
+1. **TrOCR** extracts clean text from handwriting → `"Name: John Smith\nDate: 12/10/2025\nAmount: $500"`
+2. **Qwen2-VL** structures the extracted **text** (not image) into JSON
+
+**Why this works:**
+- TrOCR reads the messy handwriting perfectly
+- Qwen2-VL receives **clean text** instead of blurry handwritten image
+- Best accuracy because each model does what it's best at
 
 **Best for:**
 - Complex forms

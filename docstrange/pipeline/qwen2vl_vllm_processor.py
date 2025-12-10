@@ -252,6 +252,91 @@ You are a helpful assistant that extracts structured data from documents.<|im_en
             traceback.print_exc()
             raise
     
+    def extract_structured_data_from_text(self, text: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data from pre-extracted text (e.g., from TrOCR handwriting).
+        
+        Args:
+            text: Pre-extracted text (from TrOCR or other OCR)
+            json_schema: Optional JSON schema to guide extraction
+            
+        Returns:
+            Structured data as dictionary
+        """
+        try:
+            # Build prompt based on schema
+            if json_schema:
+                schema_str = json.dumps(json_schema, indent=2)
+                user_message = f"""You are a document extraction AI. Convert this extracted text into a structured JSON object.
+
+Extracted Text:
+{text}
+
+Schema to follow:
+{schema_str}
+
+IMPORTANT RULES:
+1. Return ONLY the JSON object - no markdown, no code blocks, no explanations
+2. Start your response with {{ and end with }}
+3. Extract the value for every field in the schema
+4. For "tags", return an array of strings like ["tag1", "tag2"]
+5. For "summary", write a clear 2-3 sentence description
+6. For "file_type", identify the document type from the schema description
+
+DATA CORRECTION RULES (CRITICAL):
+7. Convert ALL Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to Western numerals (0123456789)
+8. Standardize dates to YYYY-MM-DD format
+9. For financial documents: verify calculations (quantity × unit_price = amount, subtotal + tax - discount = total)
+10. For identity documents: standardize ID/passport numbers, validate dates
+11. Remove duplicates from arrays
+12. Ensure numeric fields are numbers, not strings
+13. Clean up text: remove extra spaces, fix OCR errors
+
+JSON output:"""
+            else:
+                user_message = f"""Convert this extracted text into a structured JSON object.
+
+Extracted Text:
+{text}
+
+Return ONLY the JSON, no explanation."""
+            
+            # Construct vLLM-compatible prompt (text-only, no image)
+            prompt = f"""<|im_start|>system
+You are a helpful assistant that structures extracted text into JSON.<|im_end|>
+<|im_start|>user
+{user_message}<|im_end|>
+<|im_start|>assistant
+"""
+            
+            logger.info("🔍 Structuring extracted text with vLLM...")
+            print(f"⚡ Converting extracted text to JSON ({len(text)} chars)...")
+            
+            # vLLM inference (text-only)
+            outputs = self.llm.generate(
+                prompt,
+                sampling_params=self.sampling_params,
+                use_tqdm=False
+            )
+            
+            json_text = outputs[0].outputs[0].text.strip()
+            
+            print(f"✅ vLLM structuring complete. Response length: {len(json_text)} chars")
+            
+            # Parse JSON
+            parsed = self._parse_json(json_text)
+            
+            return {
+                "structured_data": parsed,
+                "format": "qwen2vl_vllm_text_to_json",
+                "model": "qwen2vl_vllm",
+                "schema": json_schema,
+                "source": "text_extraction"
+            }
+            
+        except Exception as e:
+            logger.error(f"Text-based structured extraction failed: {e}")
+            raise
+    
     def _parse_json(self, text: str) -> Dict[str, Any]:
         """Parse JSON from text, handling markdown code blocks.
         

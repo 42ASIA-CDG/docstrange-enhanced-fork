@@ -460,20 +460,29 @@ class TrOCROCRService(OCRService):
                 return {"error": "Image file does not exist"}
             
             # Step 1: Extract handwritten text with TrOCR
+            logger.info("Step 1: Extracting handwritten text with TrOCR...")
+            print("✍️  Step 1: TrOCR reading handwriting...")
+            
             handwritten_text = self._processor.extract_text_from_regions(image_path)
             
             if not handwritten_text.strip():
                 return {"error": "No text extracted from handwriting"}
             
-            # Step 2: Use Qwen2-VL for structured extraction from the clean text
-            # This hybrid approach gives better results for handwritten documents
+            print(f"✅ TrOCR extracted {len(handwritten_text)} characters of handwriting")
+            logger.info(f"TrOCR extracted text: {handwritten_text[:200]}...")
+            
+            # Step 2: Use Qwen2-VL to structure the clean handwritten text into JSON
+            # This hybrid approach gives better results for handwritten documents:
+            # - TrOCR is EXCELLENT at reading messy handwriting
+            # - Qwen2-VL is EXCELLENT at structuring text into JSON
             from .qwen2vl_vllm_processor import Qwen2VLvLLMProcessor
             
-            logger.info("Using hybrid TrOCR + Qwen2-VL for handwritten document extraction")
-            print("📝 TrOCR extracted handwriting, now structuring with Qwen2-VL...")
+            logger.info("Step 2: Structuring handwritten text with Qwen2-VL...")
+            print("🧠 Step 2: Qwen2-VL structuring handwriting into JSON...")
             
             vlm = Qwen2VLvLLMProcessor()
-            return vlm.extract_structured_data(image_path, json_schema)
+            # Use the TEXT extraction method, not image extraction
+            return vlm.extract_structured_data_from_text(handwritten_text, json_schema)
             
         except Exception as e:
             logger.error(f"TrOCR structured extraction failed: {e}")
