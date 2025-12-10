@@ -206,9 +206,8 @@ IMPORTANT RULES:
 4. For "tags", return an array of strings like ["tag1", "tag2"]
 5. For "summary", write a clear 2-3 sentence description
 6. For "file_type", identify the document type from the schema description
-7. For "full_doc_ocr": Extract ALL visible text preserving layout. Convert Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to Western numerals (0123456789). Keep Arabic/non-Latin text as-is.
-8. AVOID repetition - if you see repeated values, write them only once
-9. Do not add any text before or after the JSON
+7. AVOID repetition - if you see repeated values, write them only once
+8. Do not add any text before or after the JSON
 
 JSON output:"""
             else:
