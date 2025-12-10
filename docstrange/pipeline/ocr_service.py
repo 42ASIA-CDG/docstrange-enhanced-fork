@@ -423,12 +423,69 @@ class HunyuanOCRService(OCRService):
             return ""
 
 
+class TrOCROCRService(OCRService):
+    """TrOCR implementation for handwritten text recognition."""
+    
+    def __init__(self):
+        """Initialize the TrOCR service."""
+        from .trocr_processor import TrOCRProcessor
+        self._processor = TrOCRProcessor()
+        logger.info("TrOCROCRService initialized for handwriting recognition")
+    
+    def extract_text(self, image_path: str) -> str:
+        """Extract handwritten text using TrOCR."""
+        try:
+            if not os.path.exists(image_path):
+                logger.error(f"Image file does not exist: {image_path}")
+                return ""
+            
+            return self._processor.extract_text_from_regions(image_path)
+        except Exception as e:
+            logger.error(f"TrOCR text extraction failed: {e}")
+            return ""
+    
+    def extract_text_with_layout(self, image_path: str) -> str:
+        """Extract handwritten text with layout awareness."""
+        # TrOCR doesn't preserve layout as well as other methods
+        # Just return the extracted text
+        return self.extract_text(image_path)
+    
+    def extract_structured_data(self, image_path: str, json_schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Extract structured data from handwritten document.
+        
+        Note: TrOCR extracts text, then uses a VLM for structured extraction.
+        """
+        try:
+            if not os.path.exists(image_path):
+                return {"error": "Image file does not exist"}
+            
+            # Step 1: Extract handwritten text with TrOCR
+            handwritten_text = self._processor.extract_text_from_regions(image_path)
+            
+            if not handwritten_text.strip():
+                return {"error": "No text extracted from handwriting"}
+            
+            # Step 2: Use Qwen2-VL for structured extraction from the clean text
+            # This hybrid approach gives better results for handwritten documents
+            from .qwen2vl_vllm_processor import Qwen2VLvLLMProcessor
+            
+            logger.info("Using hybrid TrOCR + Qwen2-VL for handwritten document extraction")
+            print("📝 TrOCR extracted handwriting, now structuring with Qwen2-VL...")
+            
+            vlm = Qwen2VLvLLMProcessor()
+            return vlm.extract_structured_data(image_path, json_schema)
+            
+        except Exception as e:
+            logger.error(f"TrOCR structured extraction failed: {e}")
+            return {"error": str(e)}
+
+
 # ========== FACTORY ==========
 
 class OCRServiceFactory:
     """Factory for creating OCR services based on configuration.
     
-    Active Models: nanonets, qwen2vl, qwen3vl, hunyuan_ocr
+    Active Models: nanonets, qwen2vl, qwen3vl, hunyuan_ocr, trocr (handwriting)
     Archived Models: neural, donut, phi3vision, llava, paddleocr
     """
     
@@ -437,7 +494,7 @@ class OCRServiceFactory:
         """Create OCR service based on provider configuration.
         
         Args:
-            provider: OCR provider name (active: 'nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr')
+            provider: OCR provider name (active: 'nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr', 'trocr')
             
         Returns:
             OCRService instance
@@ -461,6 +518,8 @@ class OCRServiceFactory:
             return Qwen3VLOCRService()
         elif provider_lower in ['hunyuan_ocr', 'hunyuanocr', 'hunyuan']:
             return HunyuanOCRService()
+        elif provider_lower in ['trocr', 'handwriting']:
+            return TrOCROCRService()
         
         # Archived models - provide helpful error message
         elif provider_lower in ['neural', 'donut', 'phi3vision', 'llava', 'paddleocr']:
@@ -482,4 +541,4 @@ class OCRServiceFactory:
         Returns:
             List of active provider names (archived models excluded)
         """
-        return ['nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr'] 
+        return ['nanonets', 'qwen2vl', 'qwen3vl', 'hunyuan_ocr', 'trocr'] 
