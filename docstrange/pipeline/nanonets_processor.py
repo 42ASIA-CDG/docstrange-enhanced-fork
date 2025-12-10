@@ -137,16 +137,22 @@ IMPORTANT RULES:
 
 DATA CORRECTION RULES (CRITICAL):
 9. Convert ALL Arabic-Indic numerals (٠١٢٣٤٥٦٧٨٩) to Western numerals (0123456789)
-10. Verify mathematical calculations:
-    - Ensure line_items amounts = quantity × unit_price
-    - Ensure subtotal = sum of all line item amounts
-    - Ensure total = subtotal + tax - discount
-    - If calculations are wrong, CORRECT them to the right values
-11. Standardize dates to YYYY-MM-DD format (e.g., "12/27/2021" → "2021-12-27")
-12. Remove duplicates from arrays (tags, line_items, etc.)
-13. Ensure all monetary values are numbers, not strings
-14. Clean up text: remove extra spaces, fix obvious OCR errors
-15. Validate required fields are not empty or null
+10. Standardize dates to YYYY-MM-DD format (e.g., "12/27/2021" → "2021-12-27", "٢٧/١٢/٢٠٢١" → "2021-12-27")
+11. For financial documents (invoices, receipts):
+    - Verify line_items: amount = quantity × unit_price
+    - Verify subtotal = sum of all line item amounts
+    - Verify total = subtotal + tax - discount
+    - If calculations are wrong, CORRECT them
+12. For identity documents (passports, IDs, licenses):
+    - Standardize ID/passport numbers (remove spaces, hyphens)
+    - Ensure dates (birth_date, issue_date, expiry_date) are valid and in YYYY-MM-DD
+    - Verify age calculations match birth date
+13. General corrections:
+    - Remove duplicates from all arrays
+    - Ensure numeric fields (amounts, ages, quantities) are numbers, not strings
+    - Clean up text: remove extra spaces, fix obvious OCR errors
+    - Validate required fields are not empty or null
+    - Fix common OCR mistakes (l→1, O→0, etc.)
 
 JSON output:"""
             else:
