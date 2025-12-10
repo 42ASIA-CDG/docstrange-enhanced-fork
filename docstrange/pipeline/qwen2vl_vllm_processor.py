@@ -74,16 +74,50 @@ class Qwen2VLvLLMProcessor:
             logger.error(f"Failed to initialize vLLM model: {e}")
             raise
     
-    def _image_to_base64(self, image_path: str) -> str:
-        """Convert image to base64 string for vLLM.
+    def _image_to_base64(self, image_path: str, preprocess: bool = True) -> str:
+        """Convert image to base64 string for vLLM with optional preprocessing.
         
         Args:
             image_path: Path to image file
+            preprocess: Apply preprocessing to fix OCR issues (deskew, denoise, etc.)
             
         Returns:
             Base64 encoded image string
         """
         image = Image.open(image_path).convert("RGB")
+        
+        # Apply preprocessing if enabled
+        if preprocess:
+            try:
+                import cv2
+                import numpy as np
+                from ..utils.image_preprocessing import ImagePreprocessor
+                
+                # Convert PIL to numpy array (RGB -> BGR for cv2)
+                img_array = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                
+                # Preprocess
+                preprocessor = ImagePreprocessor(
+                    target_height=1024,  # Higher for VLM models
+                    preserve_aspect_ratio=True,
+                    enable_deskew=True,
+                    enable_binarization=False,  # Keep color for VLMs
+                    enable_denoising=True,
+                    padding_pixels=20
+                )
+                processed = preprocessor.preprocess(img_array)
+                
+                # Convert back to PIL (BGR -> RGB)
+                if len(processed.shape) == 2:
+                    processed = cv2.cvtColor(processed, cv2.COLOR_GRAY2RGB)
+                else:
+                    processed = cv2.cvtColor(processed, cv2.COLOR_BGR2RGB)
+                image = Image.fromarray(processed)
+                
+                logger.info("Applied preprocessing to fix OCR repetition/hallucination")
+            except Exception as e:
+                logger.warning(f"Preprocessing failed, using original image: {e}")
+        
         buffered = BytesIO()
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode()
