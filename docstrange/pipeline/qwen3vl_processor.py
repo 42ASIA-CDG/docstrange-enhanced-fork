@@ -143,7 +143,7 @@ class Qwen3VLProcessor:
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=2048,
+                    max_new_tokens=4096,  # Increased to handle large documents
                     do_sample=False
                 )
             
@@ -194,11 +194,22 @@ class Qwen3VLProcessor:
             # Build prompt based on schema
             if json_schema:
                 schema_str = json.dumps(json_schema, indent=2)
-                prompt = f"""Extract information from this document and return it as a valid JSON object matching this schema:
+                prompt = f"""You are a document extraction AI. Extract information from this document image and return ONLY a valid JSON object.
 
+Schema to follow:
 {schema_str}
 
-Return ONLY the JSON object, no explanation."""
+IMPORTANT RULES:
+1. Return ONLY the JSON object - no markdown, no code blocks, no explanations
+2. Start your response with {{ and end with }}
+3. Extract the value for every field in the schema
+4. For "tags", return an array of strings like ["tag1", "tag2"]
+5. For "summary", write a clear 2-3 sentence description
+6. For "file_type", identify the document type from the schema description
+7. Use "full_doc_ocr" to store ALL visible text from the document
+8. Do not add any text before or after the JSON
+
+JSON output:"""
             else:
                 prompt = "Extract all information from this document and return it as a structured JSON object. Return ONLY the JSON, no explanation."
             
@@ -239,7 +250,7 @@ Return ONLY the JSON object, no explanation."""
             with torch.no_grad():
                 generated_ids = self.model.generate(
                     **inputs,
-                    max_new_tokens=2048,
+                    max_new_tokens=8192,  # Increased to handle large OCR outputs
                     do_sample=False
                 )
             
@@ -283,21 +294,30 @@ Return ONLY the JSON object, no explanation."""
         Returns:
             Parsed JSON dictionary
         """
+        logger.info(f"[QWEN3_PARSE] Attempting to parse JSON from output (length: {len(text)})")
+        logger.debug(f"[QWEN3_PARSE] First 500 chars: {text[:500]}")
+        
         # Try to extract JSON from markdown code blocks
         json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
         if json_match:
             text = json_match.group(1).strip()
+            logger.info("[QWEN3_PARSE] Extracted JSON from markdown code block")
         
         # Try direct parsing
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
+            parsed = json.loads(text)
+            logger.info(f"[QWEN3_PARSE] Successfully parsed JSON with {len(parsed)} keys")
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.warning(f"[QWEN3_PARSE] Direct parsing failed: {e}")
             # Try cleaning
             try:
-                text = text.strip('`').strip()
+                cleaned = text.strip('`').strip()
                 # Remove trailing commas
-                text = re.sub(r',(\s*[}\]])', r'\1', text)
-                return json.loads(text)
+                cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+                parsed = json.loads(cleaned)
+                logger.info("[QWEN3_PARSE] Successfully parsed after cleaning")
+                return parsed
             except json.JSONDecodeError:
                 # Last resort: try to find JSON object
                 json_match = re.search(r'\{.*\}', text, re.DOTALL)
@@ -306,12 +326,14 @@ Return ONLY the JSON object, no explanation."""
                         cleaned = json_match.group(0)
                         # Remove trailing commas
                         cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
-                        return json.loads(cleaned)
-                    except:
-                        pass
+                        parsed = json.loads(cleaned)
+                        logger.info("[QWEN3_PARSE] Successfully extracted JSON object from text")
+                        return parsed
+                    except Exception as inner_e:
+                        logger.error(f"[QWEN3_PARSE] Failed to parse extracted JSON: {inner_e}")
                 
-                logger.error(f"Failed to parse JSON: {text[:200]}")
-                return {"error": "Failed to parse JSON", "raw_output": text}
+                logger.error(f"[QWEN3_PARSE] All parsing attempts failed. Raw output: {text[:500]}")
+                return {"error": "Failed to parse JSON", "raw_output": text[:1000]}
     
     def is_available(self) -> bool:
         """Check if Qwen3-VL model is available.

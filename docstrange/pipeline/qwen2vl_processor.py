@@ -125,7 +125,7 @@ class Qwen2VLProcessor:
             logger.info("Generating text extraction...")
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=1024,  # Reduced from 2048
+                max_new_tokens=4096,  # Increased to handle large documents
                 do_sample=False,
                 num_beams=1,  # Reduce memory
                 pad_token_id=self.processor.tokenizer.pad_token_id,
@@ -186,18 +186,22 @@ class Qwen2VLProcessor:
             # Build prompt based on schema
             if json_schema:
                 schema_str = json.dumps(json_schema, indent=2)
-                prompt = f"""Extract information from this document and return it as a valid JSON object matching the following schema:
+                prompt = f"""You are a document extraction AI. Extract information from this document image and return ONLY a valid JSON object.
 
+Schema to follow:
 {schema_str}
 
-Instructions:
-- Return ONLY the JSON object, no additional text
-- Extract values for each field defined in the schema
-- Use strings for all values
-- For arrays, return a list of objects
-- If a field is not found, use null or empty string
+IMPORTANT RULES:
+1. Return ONLY the JSON object - no markdown, no code blocks, no explanations
+2. Start your response with {{ and end with }}
+3. Extract the value for every field in the schema
+4. For "tags", return an array of strings like ["tag1", "tag2"]
+5. For "summary", write a clear 2-3 sentence description
+6. For "file_type", identify the document type from the schema description
+7. Use "full_doc_ocr" to store ALL visible text from the document
+8. Do not add any text before or after the JSON
 
-Return the JSON object:"""
+JSON output:"""
             else:
                 prompt = """Extract all information from this document and return it as a structured JSON object.
 
@@ -241,7 +245,7 @@ Return the JSON object:"""
             
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=1024,  # Reduced from 2048
+                max_new_tokens=8192,  # Increased to handle large OCR outputs
                 do_sample=False,
                 num_beams=1,  # Reduce memory
                 pad_token_id=self.processor.tokenizer.pad_token_id,
@@ -293,30 +297,41 @@ Return the JSON object:"""
         Returns:
             Parsed JSON dictionary
         """
+        logger.info(f"[PARSE] Attempting to parse JSON from output (length: {len(text)})")
+        logger.debug(f"[PARSE] First 500 chars: {text[:500]}")
+        
         # Try to extract JSON from markdown code blocks
         json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', text, re.DOTALL)
         if json_match:
             text = json_match.group(1).strip()
+            logger.info("[PARSE] Extracted JSON from markdown code block")
         
         # Try direct parsing
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
+            parsed = json.loads(text)
+            logger.info(f"[PARSE] Successfully parsed JSON with {len(parsed)} keys")
+            return parsed
+        except json.JSONDecodeError as e:
+            logger.warning(f"[PARSE] Direct parsing failed: {e}")
             # Try cleaning
             try:
-                text = text.strip('`').strip()
-                return json.loads(text)
+                cleaned = text.strip('`').strip()
+                parsed = json.loads(cleaned)
+                logger.info("[PARSE] Successfully parsed after cleaning")
+                return parsed
             except json.JSONDecodeError:
                 # Last resort: try to find JSON object
                 json_match = re.search(r'\{.*\}', text, re.DOTALL)
                 if json_match:
                     try:
-                        return json.loads(json_match.group(0))
-                    except:
-                        pass
+                        parsed = json.loads(json_match.group(0))
+                        logger.info("[PARSE] Successfully extracted JSON object from text")
+                        return parsed
+                    except Exception as inner_e:
+                        logger.error(f"[PARSE] Failed to parse extracted JSON: {inner_e}")
                 
-                logger.error(f"Failed to parse JSON: {text[:200]}")
-                return {"error": "Failed to parse JSON", "raw_output": text}
+                logger.error(f"[PARSE] All parsing attempts failed. Raw output: {text[:500]}")
+                return {"error": "Failed to parse JSON", "raw_output": text[:1000]}
     
     def is_available(self) -> bool:
         """Check if Qwen2-VL model is available.

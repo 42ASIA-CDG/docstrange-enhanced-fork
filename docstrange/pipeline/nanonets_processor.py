@@ -120,11 +120,22 @@ class NanonetsDocumentProcessor:
             # Build prompt based on schema
             if json_schema:
                 schema_str = json.dumps(json_schema, indent=2)
-                prompt = f"""Extract information from this document and return it as a JSON object that matches this schema:
+                prompt = f"""You are a document extraction AI. Extract information from this document image and return ONLY a valid JSON object.
 
+Schema to follow:
 {schema_str}
 
-Return ONLY the JSON object, no additional text or explanations."""
+IMPORTANT RULES:
+1. Return ONLY the JSON object - no markdown, no code blocks, no explanations
+2. Start your response with {{ and end with }}
+3. Extract the value for every field in the schema
+4. For "tags", return an array of strings like ["tag1", "tag2"]
+5. For "summary", write a clear 2-3 sentence description
+6. For "file_type", identify the document type from the schema description
+7. Use "full_doc_ocr" to store ALL visible text from the document
+8. Do not add any text before or after the JSON
+
+JSON output:"""
             else:
                 prompt = "Extract all information from this document and return it as a structured JSON object. Include all relevant fields like invoice number, dates, amounts, items, etc."
             
@@ -142,7 +153,7 @@ Return ONLY the JSON object, no additional text or explanations."""
             inputs = self.processor(text=[text], images=[image], padding=True, return_tensors="pt")
             inputs = inputs.to(self.model.device)
             
-            output_ids = self.model.generate(**inputs, max_new_tokens=2048, do_sample=False)
+            output_ids = self.model.generate(**inputs, max_new_tokens=8192, do_sample=False)  # Increased to handle large OCR outputs
             generated_ids = [output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, output_ids)]
             
             output_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -172,15 +183,20 @@ Return ONLY the JSON object, no additional text or explanations."""
         Returns:
             Parsed JSON dictionary
         """
+        logger.info(f"[NANONETS_PARSE] Attempting to parse JSON (length: {len(text)})")
         try:
             # Try direct JSON parsing first
-            return json.loads(text)
+            parsed = json.loads(text)
+            logger.info(f"[NANONETS_PARSE] Successfully parsed JSON")
+            return parsed
         except json.JSONDecodeError:
             # Try to find JSON in code blocks
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
             if json_match:
                 try:
-                    return json.loads(json_match.group(1))
+                    parsed = json.loads(json_match.group(1))
+                    logger.info("[NANONETS_PARSE] Parsed from code block")
+                    return parsed
                 except json.JSONDecodeError:
                     pass
             
@@ -188,12 +204,14 @@ Return ONLY the JSON object, no additional text or explanations."""
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 try:
-                    return json.loads(json_match.group(0))
+                    parsed = json.loads(json_match.group(0))
+                    logger.info("[NANONETS_PARSE] Extracted JSON object")
+                    return parsed
                 except json.JSONDecodeError:
                     pass
             
-            logger.warning(f"Failed to parse JSON from text: {text[:200]}...")
-            return {}
+            logger.error(f"[NANONETS_PARSE] All parsing failed. Raw: {text[:500]}")
+            return {"error": "Failed to parse JSON", "raw_output": text[:1000]}
     
     def _extract_text_with_nanonets(self, image_path: str, max_new_tokens: int = 4096) -> str:
         """Extract text using Nanonets OCR model."""
