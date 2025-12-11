@@ -471,18 +471,23 @@ class TrOCROCRService(OCRService):
             print(f"✅ TrOCR extracted {len(handwritten_text)} characters of handwriting")
             logger.info(f"TrOCR extracted text: {handwritten_text[:200]}...")
             
-            # Step 2: Use Qwen2-VL to structure the clean handwritten text into JSON
+            # Step 2: Use pure LLM to structure the clean handwritten text into JSON
             # This hybrid approach gives better results for handwritten documents:
             # - TrOCR is EXCELLENT at reading messy handwriting
-            # - Qwen2-VL is EXCELLENT at structuring text into JSON
-            from .qwen2vl_vllm_processor import Qwen2VLvLLMProcessor
+            # - LLM is EXCELLENT at structuring TEXT into JSON (not images!)
+            # Using a pure LLM is:
+            #   - Faster (no image processing overhead)
+            #   - More efficient (smaller model, less VRAM)
+            #   - Better at text understanding
+            from .llm_structurer import create_text_structurer
             
-            logger.info("Step 2: Structuring handwritten text with Qwen2-VL...")
-            print("🧠 Step 2: Qwen2-VL structuring handwriting into JSON...")
+            logger.info("Step 2: Structuring handwritten text with LLM...")
+            print("🧠 Step 2: LLM structuring text into JSON (faster than VLM)...")
             
-            vlm = Qwen2VLvLLMProcessor()
-            # Use the TEXT extraction method, not image extraction
-            return vlm.extract_structured_data_from_text(handwritten_text, json_schema)
+            # Use Ollama by default (free, local, private)
+            # Can switch to vLLM for production: create_text_structurer("vllm")
+            llm = create_text_structurer("ollama", model="qwen2.5:7b")
+            return llm.structure_text_to_json(handwritten_text, json_schema)
             
         except Exception as e:
             logger.error(f"TrOCR structured extraction failed: {e}")
